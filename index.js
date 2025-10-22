@@ -1,8 +1,8 @@
 import express from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
+import fetch from "node-fetch";
 
-// 🔹 Cargar variables de entorno (.env)
 dotenv.config();
 
 const app = express();
@@ -12,9 +12,75 @@ app.use(bodyParser.json());
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const YEASTAR_USER = process.env.YEASTAR_USER;
+const YEASTAR_PASS = process.env.YEASTAR_PASS;
 
 // 🗂️ Estado de conversación por usuario (en memoria)
 const userState = {};
+
+// 📌 Mapeo de colas fijas (Opción A)
+const COLAS = {
+  "MENU_ASU_DEFAULT": 3,  // ASU Servicios
+  "ASU_POST": 7,           // ASU Cobranzas
+  "MENU_CDE_DEFAULT": 4,   // CDE Servicios
+  "CDE_POST": 9            // CDE Repuestos
+};
+
+// 🔹 Token Yeastar en memoria
+let accessToken = "";
+let tokenExpire = 0;
+
+// ✅ Obtener token de Yeastar con renovación automática
+async function getAccessToken() {
+  const now = Date.now() / 1000;
+  if (!accessToken || now >= tokenExpire) {
+    const res = await fetch("https://vicar.ras.yeastar.com/openapi/v1.0/get_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: YEASTAR_USER,
+        password: YEASTAR_PASS
+      })
+    });
+    const data = await res.json();
+    if (data.errcode !== 0) throw new Error(`Yeastar get_token error: ${data.errmsg}`);
+    accessToken = data.access_token;
+    tokenExpire = now + data.access_token_expire_time - 10;
+  }
+  return accessToken;
+}
+
+// ✅ Buscar session_id activo de Yeastar por número de WhatsApp
+async function getSessionIdByNumber(userNo) {
+  const token = await getAccessToken();
+  const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=3&user_no=${userNo}&page=1&page_size=20`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.errcode !== 0) {
+    console.error("Error al obtener session:", data);
+    return null;
+  }
+  const session = data.list?.[0];
+  return session?.id || null;
+}
+
+// ✅ Transferir sesión a otra cola
+async function transferSession(sessionId, destinationId) {
+  const token = await getAccessToken();
+  const res = await fetch(`https://vicar.ras.yeastar.com/openapi/v1.0/message_session/transfer?access_token=${token}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      from_member_id: 0,
+      destination_type: "queue",
+      destination_id: destinationId
+    })
+  });
+  const data = await res.json();
+  console.log("📤 Transfer response:", data);
+  return data;
+}
 
 // 📤 Envío de mensajes a WhatsApp Cloud API
 async function sendMessage(to, text) {
@@ -32,7 +98,6 @@ async function sendMessage(to, text) {
         text: { body: text },
       }),
     });
-
     const data = await response.json();
     console.log("📤 Respuesta de WhatsApp:", data);
   } catch (err) {
@@ -40,12 +105,15 @@ async function sendMessage(to, text) {
   }
 }
 
-// 💬 Flujo conversacional simple
-function getFlowResponse(userId, message) {
+// 💬 Flujo conversacional con transferencias
+async function getFlowResponse(userId, message, userNo) {
   let state = userState[userId] || "START";
   console.log(`💡 getFlowResponse: userId=${userId}, estadoPrevio=${state}, mensaje=${message}`);
 
   let response = "";
+
+  // Obtener session_id de Yeastar para este número
+  const sessionId = await getSessionIdByNumber(userNo);
 
   switch (state) {
     case "START":
@@ -76,12 +144,14 @@ function getFlowResponse(userId, message) {
       } else {
         response = "✅ Solicitud enviada. Te derivamos al sector correspondiente.";
         userState[userId] = "FIN";
+        if (sessionId) await transferSession(sessionId, COLAS["MENU_ASU_DEFAULT"]);
       }
       break;
 
     case "ASU_POST":
       response = "✅ Solicitud enviada a Post Venta Asunción.";
       userState[userId] = "FIN";
+      if (sessionId) await transferSession(sessionId, COLAS["ASU_POST"]);
       break;
 
     case "MENU_CDE":
@@ -92,12 +162,14 @@ function getFlowResponse(userId, message) {
       } else {
         response = "✅ Solicitud enviada. Te derivamos al sector correspondiente.";
         userState[userId] = "FIN";
+        if (sessionId) await transferSession(sessionId, COLAS["MENU_CDE_DEFAULT"]);
       }
       break;
 
     case "CDE_POST":
       response = "✅ Solicitud enviada a Post Venta CDE.";
       userState[userId] = "FIN";
+      if (sessionId) await transferSession(sessionId, COLAS["CDE_POST"]);
       break;
 
     case "FIN":
@@ -149,7 +221,7 @@ app.post("/webhook", async (req, res) => {
 
       console.log(`👤 Usuario ${from} escribió: ${text}`);
 
-      const reply = getFlowResponse(from, text);
+      const reply = await getFlowResponse(from, text, from);
       await sendMessage(from, reply);
     } else {
       console.log("⚠️ Sin mensajes en el payload");
@@ -161,5 +233,5 @@ app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
 });
 
-// ✅ Exportación requerida por Vercel (no usar app.listen)
+// ✅ Exportación para Vercel
 export default app;
