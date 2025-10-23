@@ -78,8 +78,8 @@ async function getSessionIdByNumber(userNo) {
   console.log(`🔎 Buscando session para userNo=${userNo}`);
   const token = await getAccessToken();
 
-  const allowedUserTypes = [1, 9];
-  for (const userType of allowedUserTypes) {
+  const userType = 1;
+  
     try {
       const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${encodeURIComponent(userNo)}&page=1&page_size=20`;
       console.log(`🔎 Probando user_type=${userType} -> ${url}`);
@@ -100,8 +100,6 @@ async function getSessionIdByNumber(userNo) {
     } catch (err) {
       console.error(`❌ Excepción buscando session con user_type=${userType}:`, err);
     }
-  }
-
   console.log("🔎 No se encontró session activa para este número");
   return null;
 }
