@@ -167,8 +167,8 @@ async function getFlowResponse(userId, message, userNo) {
   let response = "";
 
   // Obtener session_id de Yeastar para este número
-  const sessionId = await getSessionIdByNumber(userNo);
-  console.log(`💡 sessionId recuperado: ${sessionId}`);
+  //const sessionId = await getSessionIdByNumber(userNo);
+  //console.log(`💡 sessionId recuperado: ${sessionId}`);
 
   switch (state) {
     case "START":
@@ -223,6 +223,9 @@ async function getFlowResponse(userId, message, userNo) {
       console.log("▶ Estado ASU_POST -> accion directa de transferencia");
       response = "✅ Solicitud enviada a Post Venta Asunción.";
       userState[userId] = "FIN";
+      // Obtener session_id de Yeastar para este número
+      const sessionId = await getSessionIdByNumber(userNo);
+      console.log(`💡 sessionId recuperado: ${sessionId}`);
       if (sessionId) {
         try {
           const transferRes = await transferSession(sessionId, COLAS["ASU_POST"]);
