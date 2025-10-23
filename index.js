@@ -53,7 +53,7 @@ async function getAccessToken() {
 // ✅ Buscar session_id activo de Yeastar por número de WhatsApp
 async function getSessionIdByNumber(userNo) {
   const token = await getAccessToken();
-  const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=3&user_no=${userNo}&page=1&page_size=20`;
+  const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=1&user_no=${userNo}&page=1&page_size=20`;
   const res = await fetch(url);
   const data = await res.json();
   if (data.errcode !== 0) {
