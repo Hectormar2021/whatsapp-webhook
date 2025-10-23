@@ -21,7 +21,7 @@ const userState = {};
 // 📌 Mapeo de colas fijas (Opción A)
 const COLAS = {
   "MENU_ASU_DEFAULT": 3,  // ASU Servicios
-  "ASU_POST": 7,           // ASU Cobranzas
+  "ASU_POST": 15,           // ASU Cobranzas
   "MENU_CDE_DEFAULT": 4,   // CDE Servicios
   "CDE_POST": 9            // CDE Repuestos
 };
