@@ -88,13 +88,20 @@ async function getSessionIdByNumber(userNo) {
       console.log(`🔎 Respuesta message_session/list (user_type=${userType}):`, JSON.stringify(data));
 
       if (data.errcode === 0 && Array.isArray(data.list) && data.list.length > 0) {
+        // Normalizar números eliminando el símbolo '+' para comparación
+        const normalizedUserNo = userNo.replace(/^\+/, '');
+
         // Filtrar la sesión que corresponde al número de WhatsApp del usuario
-        const session = data.list.find(s => s.to?.user_no === userNo);
+        const session = data.list.find(s => {
+          const sessionUserNo = s.to?.user_no?.replace(/^\+/, '') || '';
+          return sessionUserNo === normalizedUserNo;
+        });
+
         if (session) {
           console.log(`✅ Session encontrada (user_type=${userType}): id=${session.id} para userNo=${userNo}`);
           return session.id;
         } else {
-          console.warn(`⚠️ No se encontró sesión para userNo=${userNo} en la lista de ${data.list.length} sesiones`);
+          console.warn(`⚠️ No se encontró sesión para userNo=${userNo} (normalizado: ${normalizedUserNo}) en la lista de ${data.list.length} sesiones`);
         }
       }
 
