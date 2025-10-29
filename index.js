@@ -98,12 +98,11 @@ async function pickupSession(sessionId) {
     // Enviar mensaje de confirmación para activar el pickup
     const messageBody = {
       session_id: sessionId,
-      message_content: {
-        message_type: "text",
-        text: {
-          content: "✓"
-        }
-      }
+      sender_type: 1,
+      sender_no: "128",
+      msg_kind: 0,
+      msg_type: 0,
+      msg_body: "✓"
     };
 
     console.log(`🎯 Enviando mensaje para activar pickup...`);
@@ -120,7 +119,7 @@ async function pickupSession(sessionId) {
 
     // Consultar la sesión actualizada para obtener el pickup_member_id
     console.log(`🎯 Consultando session actualizada...`);
-    const getRes = await fetch(`https://vicar.ras.yeastar.com/openapi/v1.0/message_session/get?access_token=${token}&session_id=${sessionId}`);
+    const getRes = await fetch(`https://vicar.ras.yeastar.com/openapi/v1.0/message_session/get?access_token=${token}&id=${sessionId}`);
     const getData = await getRes.json();
     console.log(`🎯 Respuesta message_session/get:`, JSON.stringify(getData));
 
