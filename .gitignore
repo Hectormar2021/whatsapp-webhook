@@ -10,3 +10,9 @@ logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Ignorar Claude
+CLAUDE.md
+
+# Ignorar Docs
+docs/

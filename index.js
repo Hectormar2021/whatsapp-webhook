@@ -88,9 +88,14 @@ async function getSessionIdByNumber(userNo) {
       console.log(`🔎 Respuesta message_session/list (user_type=${userType}):`, JSON.stringify(data));
 
       if (data.errcode === 0 && Array.isArray(data.list) && data.list.length > 0) {
-        const session = data.list[0];
-        console.log(`✅ Session encontrada (user_type=${userType}): id=${session.id}`);
-        return session.id;
+        // Filtrar la sesión que corresponde al número de WhatsApp del usuario
+        const session = data.list.find(s => s.to?.user_no === userNo);
+        if (session) {
+          console.log(`✅ Session encontrada (user_type=${userType}): id=${session.id} para userNo=${userNo}`);
+          return session.id;
+        } else {
+          console.warn(`⚠️ No se encontró sesión para userNo=${userNo} en la lista de ${data.list.length} sesiones`);
+        }
       }
 
       // Si error de parámetro, lo logeamos y seguimos al siguiente tipo
@@ -165,8 +170,8 @@ async function getFlowResponse(userId, message, userNo) {
   let response = "";
 
   // Obtener session_id de Yeastar para este número
-  //const sessionId = await getSessionIdByNumber(userNo);
-  //console.log(`💡 sessionId recuperado: ${sessionId}`);
+  const sessionId = await getSessionIdByNumber(userNo);
+  console.log(`💡 sessionId recuperado: ${sessionId}`);
 
   switch (state) {
     case "START":
@@ -213,6 +218,8 @@ async function getFlowResponse(userId, message, userNo) {
           } catch (err) {
             console.error("❌ Error al transferir a cola default ASU:", err);
           }
+        } else {
+          console.warn(`⚠️ No se pudo transferir a cola default ASU: sessionId no encontrado para userId=${userId}`);
         }
       }
       break;
@@ -221,9 +228,6 @@ async function getFlowResponse(userId, message, userNo) {
       console.log("▶ Estado ASU_POST -> accion directa de transferencia");
       response = "✅ Solicitud enviada a Post Venta Asunción.";
       userState[userId] = "FIN";
-      // Obtener session_id de Yeastar para este número
-      const sessionId = await getSessionIdByNumber(userNo);
-      console.log(`💡 sessionId recuperado: ${sessionId}`);
       if (sessionId) {
         try {
           const transferRes = await transferSession(sessionId, COLAS["ASU_POST"]);
@@ -231,6 +235,8 @@ async function getFlowResponse(userId, message, userNo) {
         } catch (err) {
           console.error("❌ Error al transferir ASU_POST:", err);
         }
+      } else {
+        console.warn(`⚠️ No se pudo transferir a ASU_POST: sessionId no encontrado para userId=${userId}`);
       }
       break;
 
@@ -252,6 +258,8 @@ async function getFlowResponse(userId, message, userNo) {
           } catch (err) {
             console.error("❌ Error al transferir a cola default CDE:", err);
           }
+        } else {
+          console.warn(`⚠️ No se pudo transferir a cola default CDE: sessionId no encontrado para userId=${userId}`);
         }
       }
       break;
@@ -267,6 +275,8 @@ async function getFlowResponse(userId, message, userNo) {
         } catch (err) {
           console.error("❌ Error al transferir CDE_POST:", err);
         }
+      } else {
+        console.warn(`⚠️ No se pudo transferir a CDE_POST: sessionId no encontrado para userId=${userId}`);
       }
       break;
 
