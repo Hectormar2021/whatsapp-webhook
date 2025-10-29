@@ -102,7 +102,7 @@ async function pickupSession(sessionId) {
       sender_no: "128",
       msg_kind: 0,
       msg_type: 0,
-      msg_body: "✓"
+      msg_body: ""
     };
 
     console.log(`🎯 Enviando mensaje para activar pickup...`);
