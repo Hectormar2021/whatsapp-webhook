@@ -59,7 +59,7 @@ async function getAccessToken() {
   return accessToken;
 }
 
-// ✅ Buscar session_id activo de Yeastar por número de WhatsApp
+// ✅ Buscar session activo de Yeastar por número de WhatsApp (retorna objeto completo)
 async function getSessionIdByNumber(userNo) {
   const token = await getAccessToken();
   const userType = 1;
@@ -77,7 +77,10 @@ async function getSessionIdByNumber(userNo) {
       });
 
       if (session) {
-        return session.id;
+        return {
+          id: session.id,
+          pickup_member_id: session.pickup_member_id || 0
+        };
       }
     }
   } catch (err) {
@@ -86,17 +89,66 @@ async function getSessionIdByNumber(userNo) {
   return null;
 }
 
-// ✅ Transferir sesión a otra cola (con logs)
-async function transferSession(sessionId, destinationId) {
-  console.log(`📤 Intentando transferir session ${sessionId} -> queue ${destinationId}`);
+// ✅ Hacer pickup de sesión enviando mensaje (activa pickup implícito en modo Auto-Pickup)
+async function pickupSession(sessionId) {
+  console.log(`🎯 Intentando pickup de session ${sessionId}`);
+  const token = await getAccessToken();
+
+  try {
+    // Enviar mensaje de confirmación para activar el pickup
+    const messageBody = {
+      session_id: sessionId,
+      message_content: {
+        message_type: "text",
+        text: {
+          content: "✓"
+        }
+      }
+    };
+
+    console.log(`🎯 Enviando mensaje para activar pickup...`);
+    const sendRes = await fetch(`https://vicar.ras.yeastar.com/openapi/v1.0/message/send?access_token=${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(messageBody)
+    });
+    const sendData = await sendRes.json();
+    console.log(`🎯 Respuesta message/send:`, JSON.stringify(sendData));
+
+    // Esperar para que el sistema procese el pickup
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Consultar la sesión actualizada para obtener el pickup_member_id
+    console.log(`🎯 Consultando session actualizada...`);
+    const getRes = await fetch(`https://vicar.ras.yeastar.com/openapi/v1.0/message_session/get?access_token=${token}&session_id=${sessionId}`);
+    const getData = await getRes.json();
+    console.log(`🎯 Respuesta message_session/get:`, JSON.stringify(getData));
+
+    if (getData.errcode === 0 && getData.data) {
+      const pickupMemberId = getData.data.pickup_member_id || 0;
+      console.log(`🎯 Pickup exitoso, pickup_member_id: ${pickupMemberId}`);
+      return pickupMemberId;
+    }
+
+    console.log(`⚠️ No se pudo obtener pickup_member_id actualizado`);
+    return 0;
+  } catch (err) {
+    console.error(`❌ Excepción en pickupSession:`, err);
+    return 0;
+  }
+}
+
+// ✅ Transferir sesión a otra cola
+async function transferSession(sessionId, destinationId, fromMemberId) {
+  console.log(`📤 ANTES DE TRANSFERIR - session: ${sessionId}, destino: ${destinationId}, from_member_id: ${fromMemberId}`);
   const token = await getAccessToken();
   const body = {
     session_id: sessionId,
-    from_member_id: 0,
+    from_member_id: fromMemberId,
     destination_type: "queue",
     destination_id: destinationId
   };
-  console.log("📤 transferSession body:", JSON.stringify(body));
+  console.log("📤 DURANTE TRANSFERENCIA - body:", JSON.stringify(body));
   try {
     const res = await fetch(`https://vicar.ras.yeastar.com/openapi/v1.0/message_session/transfer?access_token=${token}`, {
       method: "POST",
@@ -104,7 +156,7 @@ async function transferSession(sessionId, destinationId) {
       body: JSON.stringify(body)
     });
     const data = await res.json();
-    console.log("📤 Transfer response:", JSON.stringify(data));
+    console.log("📤 DESPUÉS DE TRANSFERIR - response:", JSON.stringify(data));
     return data;
   } catch (err) {
     console.error("❌ Excepción en transferSession:", err);
@@ -137,12 +189,37 @@ async function sendMessage(to, text) {
   }
 }
 
+// 💬 Función auxiliar para hacer pickup y transferencia
+async function pickupAndTransfer(sessionData, destinationId, queueName) {
+  if (!sessionData) {
+    console.error(`❌ No se encontró sessionData para transferir a ${queueName}`);
+    return;
+  }
+
+  try {
+    let pickupMemberId = sessionData.pickup_member_id;
+
+    // Si no hay pickup_member_id, hacer el pickup primero
+    if (pickupMemberId === 0) {
+      console.log(`🎯 Session ${sessionData.id} no tiene pickup, haciendo pickup automático...`);
+      pickupMemberId = await pickupSession(sessionData.id);
+    } else {
+      console.log(`✓ Session ${sessionData.id} ya tiene pickup_member_id: ${pickupMemberId}`);
+    }
+
+    // Transferir con el pickup_member_id obtenido
+    await transferSession(sessionData.id, destinationId, pickupMemberId);
+  } catch (err) {
+    console.error(`❌ Error al transferir a ${queueName}:`, err);
+  }
+}
+
 // 💬 Flujo conversacional con transferencias
 async function getFlowResponse(userId, message, userNo) {
   let state = userState[userId] || "START";
   let response = "";
 
-  const sessionId = await getSessionIdByNumber(userNo);
+  const sessionData = await getSessionIdByNumber(userNo);
 
   switch (state) {
     case "START":
@@ -173,26 +250,14 @@ async function getFlowResponse(userId, message, userNo) {
       } else {
         response = "✅ Solicitud enviada. Te derivamos al sector correspondiente.";
         userState[userId] = "FIN";
-        if (sessionId) {
-          try {
-            await transferSession(sessionId, COLAS["MENU_ASU_DEFAULT"]);
-          } catch (err) {
-            console.error("❌ Error al transferir a cola default ASU:", err);
-          }
-        }
+        await pickupAndTransfer(sessionData, COLAS["MENU_ASU_DEFAULT"], "MENU_ASU_DEFAULT");
       }
       break;
 
     case "ASU_POST":
       response = "✅ Solicitud enviada a Post Venta Asunción.";
       userState[userId] = "FIN";
-      if (sessionId) {
-        try {
-          await transferSession(sessionId, COLAS["ASU_POST"]);
-        } catch (err) {
-          console.error("❌ Error al transferir ASU_POST:", err);
-        }
-      }
+      await pickupAndTransfer(sessionData, COLAS["ASU_POST"], "ASU_POST");
       break;
 
     case "MENU_CDE":
@@ -203,26 +268,14 @@ async function getFlowResponse(userId, message, userNo) {
       } else {
         response = "✅ Solicitud enviada. Te derivamos al sector correspondiente.";
         userState[userId] = "FIN";
-        if (sessionId) {
-          try {
-            await transferSession(sessionId, COLAS["MENU_CDE_DEFAULT"]);
-          } catch (err) {
-            console.error("❌ Error al transferir a cola default CDE:", err);
-          }
-        }
+        await pickupAndTransfer(sessionData, COLAS["MENU_CDE_DEFAULT"], "MENU_CDE_DEFAULT");
       }
       break;
 
     case "CDE_POST":
       response = "✅ Solicitud enviada a Post Venta CDE.";
       userState[userId] = "FIN";
-      if (sessionId) {
-        try {
-          await transferSession(sessionId, COLAS["CDE_POST"]);
-        } catch (err) {
-          console.error("❌ Error al transferir CDE_POST:", err);
-        }
-      }
+      await pickupAndTransfer(sessionData, COLAS["CDE_POST"], "CDE_POST");
       break;
 
     case "FIN":

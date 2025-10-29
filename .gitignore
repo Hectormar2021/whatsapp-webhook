@@ -13,6 +13,6 @@ yarn-error.log*
 
 # Ignorar Claude
 CLAUDE.md
-
+.claude/
 # Ignorar Docs
 docs/
