@@ -15,8 +15,6 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const YEASTAR_USER = process.env.YEASTAR_USER;
 const YEASTAR_PASS = process.env.YEASTAR_PASS;
 
-// Variables de entorno cargadas
-
 // 🗂️ Estado de conversación por usuario (en memoria)
 const userState = {};
 
@@ -34,8 +32,14 @@ let tokenExpire = 0;
 
 // ✅ Obtener token de Yeastar con renovación automática
 async function getAccessToken() {
+  console.log("\n🔐 === GET ACCESS TOKEN ===");
   const now = Date.now() / 1000;
+  const timeToExpire = tokenExpire - now;
+
+  console.log("⏰ Tiempo hasta expiración:", timeToExpire > 0 ? `${Math.round(timeToExpire)}s` : "Token expirado o no existe");
+
   if (!accessToken || now >= tokenExpire) {
+    console.log("🔄 Solicitando nuevo token a Yeastar...");
     try {
       const res = await fetch("https://vicar.ras.yeastar.com/openapi/v1.0/get_token", {
         method: "POST",
@@ -45,47 +49,90 @@ async function getAccessToken() {
           password: YEASTAR_PASS
         })
       });
+
+      console.log("📡 Response status:", res.status, res.statusText);
+
       const data = await res.json();
+      console.log("📥 Response data:", JSON.stringify(data));
+
       if (data.errcode !== 0) {
         throw new Error(`Yeastar get_token error: ${data.errmsg}`);
       }
+
       accessToken = data.access_token;
       tokenExpire = now + data.access_token_expire_time - 10;
+
+      console.log("✅ Token obtenido exitosamente");
+      console.log("⏰ Expira en:", data.access_token_expire_time, "segundos");
     } catch (err) {
       console.error("❌ Excepción al pedir token Yeastar:", err);
+      console.error("❌ Stack:", err.stack);
       throw err;
     }
+  } else {
+    console.log("✅ Usando token en caché");
   }
+
+  console.log("==============================\n");
   return accessToken;
 }
 
 // ✅ Buscar session activo de Yeastar por número de WhatsApp (retorna objeto completo)
 async function getSessionIdByNumber(userNo) {
+  console.log("\n🔍 === GET SESSION ID BY NUMBER ===");
+  console.log("📞 Buscando sesión para número:", userNo);
+
   const token = await getAccessToken();
   const userType = 1;
 
   try {
     const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${128}&page=1&page_size=20`;
+    console.log("🌐 URL de consulta:", url.replace(token, "***TOKEN***"));
+
     const res = await fetch(url);
+    console.log("📡 Response status:", res.status, res.statusText);
+
     const data = await res.json();
+    console.log("📥 Response errcode:", data.errcode);
+    console.log("📥 Total de sesiones en lista:", data.list ? data.list.length : 0);
 
     if (data.errcode === 0 && Array.isArray(data.list) && data.list.length > 0) {
       const normalizedUserNo = userNo.replace(/^\+/, '');
+      console.log("🔄 Número normalizado para búsqueda:", normalizedUserNo);
+
+      console.log("📋 Sesiones disponibles:");
+      data.list.forEach((s, index) => {
+        const sessionUserNo = s.to?.user_no?.replace(/^\+/, '') || '';
+        console.log(`  [${index}] ID: ${s.id}, To: ${sessionUserNo}, Pickup: ${s.pickup_member_id || 0}, Match: ${sessionUserNo === normalizedUserNo ? '✅' : '❌'}`);
+      });
+
       const session = data.list.find(s => {
         const sessionUserNo = s.to?.user_no?.replace(/^\+/, '') || '';
         return sessionUserNo === normalizedUserNo;
       });
 
       if (session) {
+        console.log("✅ Sesión encontrada!");
+        console.log("   ID:", session.id);
+        console.log("   Pickup Member ID:", session.pickup_member_id || 0);
+        console.log("=====================================\n");
         return {
           id: session.id,
           pickup_member_id: session.pickup_member_id || 0
         };
+      } else {
+        console.log("❌ No se encontró sesión que coincida con el número");
       }
+    } else {
+      console.log("⚠️ No hay sesiones disponibles o error en respuesta");
+      console.log("📋 Data completo:", JSON.stringify(data));
     }
   } catch (err) {
     console.error(`❌ Excepción buscando session:`, err);
+    console.error(`❌ Stack:`, err.stack);
   }
+
+  console.log("=====================================\n");
   return null;
 }
 
@@ -165,12 +212,20 @@ async function transferSession(sessionId, destinationId, fromMemberId) {
 
 // 📤 Envío de mensajes a WhatsApp Cloud API
 async function sendMessage(to, text) {
+  console.log("\n📤 === ENVIANDO MENSAJE A WHATSAPP ===");
+  console.log("📞 Destinatario:", to);
+  console.log("💬 Mensaje:", text);
+
   const url = `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`;
+  console.log("🌐 URL:", url);
+
   const payload = {
     messaging_product: "whatsapp",
     to,
     text: { body: text }
   };
+  console.log("📦 Payload:", JSON.stringify(payload, null, 2));
+
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -180,10 +235,24 @@ async function sendMessage(to, text) {
       },
       body: JSON.stringify(payload),
     });
+
+    console.log("📡 Response status:", response.status, response.statusText);
+
     const data = await response.json();
+    console.log("📥 Response data:", JSON.stringify(data, null, 2));
+
+    if (response.ok) {
+      console.log("✅ Mensaje enviado exitosamente");
+    } else {
+      console.error("❌ Error en respuesta de WhatsApp:", data);
+    }
+
+    console.log("======================================\n");
     return data;
   } catch (err) {
-    console.error("❌ Error al enviar mensaje:", err);
+    console.error("❌ Excepción al enviar mensaje:", err);
+    console.error("❌ Stack:", err.stack);
+    console.log("======================================\n");
     throw err;
   }
 }
@@ -215,10 +284,19 @@ async function pickupAndTransfer(sessionData, destinationId, queueName, messageT
 
 // 💬 Flujo conversacional con transferencias
 async function getFlowResponse(userId, message, userNo) {
+  console.log("\n🤖 === FLUJO CONVERSACIONAL ===");
+  console.log("👤 UserId:", userId);
+  console.log("💬 Mensaje:", message);
+  console.log("📞 UserNo:", userNo);
+
   let state = userState[userId] || "START";
+  console.log("📊 Estado actual:", state);
+
   let response = "";
 
+  console.log("🔍 Buscando sessionData en Yeastar para:", userNo);
   const sessionData = await getSessionIdByNumber(userNo);
+  console.log("📋 SessionData obtenido:", sessionData ? `ID: ${sessionData.id}, Pickup: ${sessionData.pickup_member_id}` : "❌ No encontrado");
 
   switch (state) {
     case "START":
@@ -284,45 +362,95 @@ async function getFlowResponse(userId, message, userNo) {
       break;
   }
 
+  console.log("📊 Nuevo estado:", userState[userId]);
+  console.log("💬 Respuesta a enviar:", response);
+  console.log("====================================\n");
+
   return response;
 }
 
 // ✅ Verificación de webhook (GET)
 app.get("/webhook", (req, res) => {
+  console.log("\n🔔 === WEBHOOK GET - VERIFICACIÓN ===");
+  console.log("📥 Query params:", JSON.stringify(req.query));
+
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
+  console.log("Mode:", mode);
+  console.log("Token recibido:", token);
+  console.log("Token esperado:", VERIFY_TOKEN);
+  console.log("Challenge:", challenge);
+
   if (mode && token) {
     if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      console.log("✅ Verificación exitosa - enviando challenge");
       res.status(200).send(challenge);
     } else {
+      console.log("❌ Token incorrecto - enviando 403");
       res.sendStatus(403);
     }
   } else {
+    console.log("❌ Faltan parámetros - enviando 400");
     res.sendStatus(400);
   }
+  console.log("=====================================\n");
 });
 
 // ✅ Recepción de mensajes (POST)
 app.post("/webhook", async (req, res) => {
+  console.log("\n📩 === WEBHOOK POST - MENSAJE RECIBIDO ===");
+  console.log("📥 Body completo:", JSON.stringify(req.body, null, 2));
+
   try {
     const entry = req.body.entry?.[0];
+    console.log("📦 Entry:", entry ? "✅ Presente" : "❌ No encontrado");
+
     const changes = entry?.changes?.[0]?.value;
+    console.log("📦 Changes:", changes ? "✅ Presente" : "❌ No encontrado");
+
     const messages = changes?.messages;
+    console.log("📦 Messages array:", messages ? `✅ ${messages.length} mensaje(s)` : "❌ No encontrado");
 
     if (messages && messages.length > 0) {
       const msg = messages[0];
       const from = msg.from;
       const text = msg.text?.body?.trim() || "";
 
+      console.log("👤 Usuario:", from);
+      console.log("💬 Mensaje recibido:", text);
+      console.log("📋 Tipo de mensaje:", msg.type);
+
+      if (!text) {
+        console.log("⚠️ Mensaje vacío o sin texto - ignorando");
+        res.sendStatus(200);
+        return;
+      }
+
+      console.log("🔄 Procesando flujo conversacional...");
       const reply = await getFlowResponse(from, text, from);
-      await sendMessage(from, reply);
+
+      console.log("📤 Respuesta generada:", reply);
+
+      if (reply) {
+        console.log("📨 Enviando respuesta a WhatsApp...");
+        const sendResult = await sendMessage(from, reply);
+        console.log("✅ Mensaje enviado exitosamente");
+      } else {
+        console.log("⚠️ No se generó respuesta para enviar");
+      }
+    } else {
+      console.log("⚠️ No hay mensajes en el webhook - podría ser un status update");
+      console.log("📋 Statuses:", changes?.statuses ? `${changes.statuses.length} status(es)` : "No hay statuses");
     }
   } catch (err) {
-    console.error("❌ Error en /webhook:", err);
+    console.error("❌ ERROR CRÍTICO en /webhook:", err);
+    console.error("❌ Stack trace:", err.stack);
   }
 
+  console.log("✅ Respondiendo 200 OK a WhatsApp");
+  console.log("=========================================\n");
   res.sendStatus(200);
 });
 
