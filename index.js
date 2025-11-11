@@ -8,7 +8,6 @@ dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 
-// 🔑 Variables de entorno
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
