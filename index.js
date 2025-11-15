@@ -142,13 +142,13 @@ async function getSessionIdByNumber(userNo) {
   return null;
 }
 
-// ✅ Hacer pickup de sesión enviando mensaje (activa pickup implícito en modo Auto-Pickup)
+// ✅ Hacer pickup de sesión enviando mensaje (activa auto-pickup en Yeastar)
 async function pickupSession(sessionId, messageToSend) {
   console.log(`🎯 Intentando pickup de session ${sessionId}`);
   const token = await getAccessToken();
 
   try {
-    // Enviar mensaje de confirmación para activar el pickup
+    // Enviar mensaje a través de Yeastar para activar auto-pickup
     const messageBody = {
       session_id: sessionId,
       sender_type: 1,
@@ -158,7 +158,7 @@ async function pickupSession(sessionId, messageToSend) {
       msg_body: messageToSend
     };
 
-    console.log(`🎯 Enviando mensaje para activar pickup: "${messageToSend}"`);
+    console.log(`🎯 Enviando mensaje vía Yeastar para activar auto-pickup: "${messageToSend}"`);
     const sendRes = await fetch(`https://vicar.ras.yeastar.com/openapi/v1.0/message/send?access_token=${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -167,7 +167,7 @@ async function pickupSession(sessionId, messageToSend) {
     const sendData = await sendRes.json();
     console.log(`🎯 Respuesta message/send:`, JSON.stringify(sendData));
 
-    // Esperar para que el sistema procese el pickup
+    // Esperar para que el sistema procese el auto-pickup
     await new Promise(resolve => setTimeout(resolve, 300));
 
     // Consultar la sesión actualizada para obtener el pickup_member_id
@@ -273,7 +273,7 @@ async function pickupAndTransfer(sessionData, destinationId, queueName, messageT
   try {
     let pickupMemberId = sessionData.pickup_member_id;
 
-    // Si no hay pickup_member_id, hacer el pickup primero
+    // Si no hay pickup_member_id, hacer el pickup primero enviando el mensaje vía Yeastar
     if (pickupMemberId === 0) {
       console.log(`🎯 Session ${sessionData.id} no tiene pickup, haciendo pickup automático...`);
       pickupMemberId = await pickupSession(sessionData.id, messageToSend);
@@ -335,33 +335,33 @@ async function getFlowResponse(userId, message, userNo) {
           "Post Venta Asunción. Elegí una opción:\n1. Ventas de repuestos\n2. Turno de Servicio\n3. Estado de vehículo";
         userState[userId] = "ASU_POST";
       } else if (message === "3") {
-        response = "✅ Solicitud enviada a Cobranzas Asunción.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_COBRANZAS"], "ASU_COBRANZAS", response);
+        await pickupAndTransfer(sessionData, COLAS["ASU_COBRANZAS"], "ASU_COBRANZAS", "✅ Solicitud enviada a Cobranzas Asunción.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "4") {
-        response = "✅ Solicitud enviada. Te derivamos al sector correspondiente.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", response);
+        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada. Te derivamos al sector correspondiente.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2, 3 o 4.";
       }
       break;
 
     case "ASU_VENTAS":
-      response = "✅ Solicitud enviada a Ventas Asunción.";
       userState[userId] = "FIN";
-      await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", response);
+      await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", "✅ Solicitud enviada a Ventas Asunción.");
+      response = ""; // Mensaje ya enviado por Yeastar
       break;
 
     case "ASU_POST":
       if (message === "1") {
-        response = "✅ Solicitud enviada a Post Venta Asunción.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_REPUESTOS"], "ASU_REPUESTOS", response);
+        await pickupAndTransfer(sessionData, COLAS["ASU_REPUESTOS"], "ASU_REPUESTOS", "✅ Solicitud enviada a Post Venta Asunción.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2" || message === "3") {
-        response = "✅ Solicitud enviada a Post Venta Asunción.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", response);
+        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada a Post Venta Asunción.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
       }
@@ -369,17 +369,17 @@ async function getFlowResponse(userId, message, userNo) {
 
     case "MENU_CDE":
       if (message === "1") {
-        response = "✅ Solicitud enviada a Ventas CDE.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_VENDEDORES"], "CDE_VENDEDORES", response);
+        await pickupAndTransfer(sessionData, COLAS["CDE_VENDEDORES"], "CDE_VENDEDORES", "✅ Solicitud enviada a Ventas CDE.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2") {
         response =
           "Post Venta CDE. Elegí una opción:\n1. Ventas de repuestos\n2. Turno de Servicio\n3. Estado de vehículo";
         userState[userId] = "CDE_POST";
       } else if (message === "3") {
-        response = "✅ Solicitud enviada a Cobranzas CDE.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_COBRANZAS"], "CDE_COBRANZAS", response);
+        await pickupAndTransfer(sessionData, COLAS["CDE_COBRANZAS"], "CDE_COBRANZAS", "✅ Solicitud enviada a Cobranzas CDE.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
       }
@@ -387,13 +387,13 @@ async function getFlowResponse(userId, message, userNo) {
 
     case "CDE_POST":
       if (message === "1") {
-        response = "✅ Solicitud enviada a Post Venta CDE.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_REPUESTOS"], "CDE_REPUESTOS", response);
+        await pickupAndTransfer(sessionData, COLAS["CDE_REPUESTOS"], "CDE_REPUESTOS", "✅ Solicitud enviada a Post Venta CDE.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2" || message === "3") {
-        response = "✅ Solicitud enviada a Post Venta CDE.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_SERVICIOS"], "CDE_SERVICIOS", response);
+        await pickupAndTransfer(sessionData, COLAS["CDE_SERVICIOS"], "CDE_SERVICIOS", "✅ Solicitud enviada a Post Venta CDE.");
+        response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
       }
