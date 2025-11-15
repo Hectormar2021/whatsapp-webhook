@@ -400,12 +400,8 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "FIN":
-      // Auto-restart: reset to START and process message as new conversation
-      console.log("🔄 Usuario en estado FIN, reiniciando automáticamente a START");
+      response = "🙏 Gracias por comunicarte con VICAR. Si querés empezar de nuevo, escribí *Hola*.";
       userState[userId] = "START";
-      response =
-        "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
-      userState[userId] = "SELECCION_SUCURSAL";
       break;
 
     default:
