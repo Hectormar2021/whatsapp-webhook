@@ -17,12 +17,19 @@ const YEASTAR_PASS = process.env.YEASTAR_PASS;
 // 🗂️ Estado de conversación por usuario (en memoria)
 const userState = {};
 
-// 📌 Mapeo de colas fijas (Opción A)
+// 📌 Mapeo de colas fijas (v3)
 const COLAS = {
-  "MENU_ASU_DEFAULT": 3,  // ASU Servicios
-  "ASU_POST": 15,           // ASU Cobranzas
-  "MENU_CDE_DEFAULT": 4,   // CDE Servicios
-  "CDE_POST": 9            // CDE Repuestos
+  // Asunción
+  "SAC": 15,                    // ASU Ventas (Vehículos nuevos y usados)
+  "ASU_REPUESTOS": 8,           // ASU Post Venta - Repuestos
+  "ASU_SERVICIOS": 3,           // ASU Post Venta - Servicios y Estado
+  "ASU_COBRANZAS": 7,           // ASU Cobranzas
+
+  // Ciudad del Este
+  "CDE_VENDEDORES": 13,         // CDE Ventas
+  "CDE_REPUESTOS": 9,           // CDE Post Venta - Repuestos
+  "CDE_SERVICIOS": 4,           // CDE Post Venta - Servicios y Estado
+  "CDE_COBRANZAS": 14           // CDE Cobranzas
 };
 
 // 🔹 Token Yeastar en memoria
@@ -307,11 +314,11 @@ async function getFlowResponse(userId, message, userNo) {
     case "SELECCION_SUCURSAL":
       if (message === "1") {
         response =
-          "Sucursal Asunción. Seleccioná una opción:\n1. Ventas Vehículos\n2. Post Venta\n3. Cobranzas\n4. Otros";
+          "Sucursal Asunción. Selecciona una opción:\n1. Ventas Vehículos\n2. Post Venta\n3. Cobranzas\n4. Otros";
         userState[userId] = "MENU_ASU";
       } else if (message === "2") {
         response =
-          "Sucursal Ciudad del Este. Seleccioná una opción:\n1. Ventas Vehículos\n2. Post Venta\n3. Cobranzas\n4. Otros";
+          "Sucursal Ciudad del Este. Selecciona una opción:\n1. Ventas de Vehículos\n2. Post Venta\n3. Cobranzas";
         userState[userId] = "MENU_CDE";
       } else {
         response = "⚠️ Opción inválida. Escribí 1 o 2.";
@@ -319,35 +326,77 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "MENU_ASU":
-      if (message === "2") {
+      if (message === "1") {
+        response =
+          "Ventas Vehiculos. Elegí una opción:\n1. Vehículos OKM\n2. Vehículos usados";
+        userState[userId] = "ASU_VENTAS";
+      } else if (message === "2") {
         response =
           "Post Venta Asunción. Elegí una opción:\n1. Ventas de repuestos\n2. Turno de Servicio\n3. Estado de vehículo";
         userState[userId] = "ASU_POST";
-      } else {
+      } else if (message === "3") {
+        response = "✅ Solicitud enviada a Cobranzas Asunción.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["MENU_ASU_DEFAULT"], "MENU_ASU_DEFAULT", "✅ Solicitud enviada. Te derivamos al sector correspondiente.");
+        await pickupAndTransfer(sessionData, COLAS["ASU_COBRANZAS"], "ASU_COBRANZAS", response);
+      } else if (message === "4") {
+        response = "✅ Solicitud enviada. Te derivamos al sector correspondiente.";
+        userState[userId] = "FIN";
+        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", response);
+      } else {
+        response = "⚠️ Opción inválida. Escribí 1, 2, 3 o 4.";
       }
       break;
 
-    case "ASU_POST":
+    case "ASU_VENTAS":
+      response = "✅ Solicitud enviada a Ventas Asunción.";
       userState[userId] = "FIN";
-      await pickupAndTransfer(sessionData, COLAS["ASU_POST"], "ASU_POST", "✅ Solicitud enviada a Post Venta Asunción.");
+      await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", response);
+      break;
+
+    case "ASU_POST":
+      if (message === "1") {
+        response = "✅ Solicitud enviada a Post Venta Asunción.";
+        userState[userId] = "FIN";
+        await pickupAndTransfer(sessionData, COLAS["ASU_REPUESTOS"], "ASU_REPUESTOS", response);
+      } else if (message === "2" || message === "3") {
+        response = "✅ Solicitud enviada a Post Venta Asunción.";
+        userState[userId] = "FIN";
+        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", response);
+      } else {
+        response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
+      }
       break;
 
     case "MENU_CDE":
-      if (message === "2") {
+      if (message === "1") {
+        response = "✅ Solicitud enviada a Ventas CDE.";
+        userState[userId] = "FIN";
+        await pickupAndTransfer(sessionData, COLAS["CDE_VENDEDORES"], "CDE_VENDEDORES", response);
+      } else if (message === "2") {
         response =
           "Post Venta CDE. Elegí una opción:\n1. Ventas de repuestos\n2. Turno de Servicio\n3. Estado de vehículo";
         userState[userId] = "CDE_POST";
-      } else {
+      } else if (message === "3") {
+        response = "✅ Solicitud enviada a Cobranzas CDE.";
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["MENU_CDE_DEFAULT"], "MENU_CDE_DEFAULT", "✅ Solicitud enviada. Te derivamos al sector correspondiente.");
+        await pickupAndTransfer(sessionData, COLAS["CDE_COBRANZAS"], "CDE_COBRANZAS", response);
+      } else {
+        response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
       }
       break;
 
     case "CDE_POST":
-      userState[userId] = "FIN";
-      await pickupAndTransfer(sessionData, COLAS["CDE_POST"], "CDE_POST", "✅ Solicitud enviada a Post Venta CDE.");
+      if (message === "1") {
+        response = "✅ Solicitud enviada a Post Venta CDE.";
+        userState[userId] = "FIN";
+        await pickupAndTransfer(sessionData, COLAS["CDE_REPUESTOS"], "CDE_REPUESTOS", response);
+      } else if (message === "2" || message === "3") {
+        response = "✅ Solicitud enviada a Post Venta CDE.";
+        userState[userId] = "FIN";
+        await pickupAndTransfer(sessionData, COLAS["CDE_SERVICIOS"], "CDE_SERVICIOS", response);
+      } else {
+        response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
+      }
       break;
 
     case "FIN":
