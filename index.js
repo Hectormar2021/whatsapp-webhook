@@ -95,7 +95,7 @@ async function getSessionIdByNumber(userNo) {
   const userType = 1;
 
   try {
-    const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${128}&page=1&page_size=20`;
+    const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${450}&page=1&page_size=20`;
     console.log("🌐 URL de consulta:", url.replace(token, "***TOKEN***"));
 
     const res = await fetch(url);
@@ -157,7 +157,7 @@ async function pickupSession(sessionId, messageToSend) {
     const messageBody = {
       session_id: sessionId,
       sender_type: 1,
-      sender_no: "128",
+      sender_no: "450",
       msg_kind: 0,
       msg_type: 0,
       msg_body: messageToSend
