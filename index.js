@@ -307,10 +307,14 @@ async function getFlowResponse(userId, message, userNo) {
   // 🤖 SILENCIAR BOT si hay un agente activo (pickup_member_id > 0)
   if (sessionData && sessionData.pickup_member_id > 0) {
     console.log("🔇 BOT SILENCIADO - Agente activo con pickup_member_id:", sessionData.pickup_member_id);
+    console.log("   Estado del usuario:", state);
     console.log("   El agente de Yeastar está atendiendo, bot no responderá");
+    console.log("   Bot NO modificará estados ni enviará mensajes");
     console.log("====================================\n");
     return ""; // No responder nada, dejar que el agente maneje la conversación
   }
+
+  console.log("✅ BOT ACTIVO - No hay agente activo (pickup_member_id = 0 o null)");
 
   switch (state) {
     case "START":
