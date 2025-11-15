@@ -17,6 +17,9 @@ const YEASTAR_PASS = process.env.YEASTAR_PASS;
 // 🗂️ Estado de conversación por usuario (en memoria)
 const userState = {};
 
+// 🗂️ Tracking de cola asignada por usuario (para detectar transferencias)
+const userQueue = {};
+
 // 📌 Mapeo de colas fijas (v3)
 const COLAS = {
   // Asunción
@@ -121,10 +124,12 @@ async function getSessionIdByNumber(userNo) {
         console.log("✅ Sesión encontrada!");
         console.log("   ID:", session.id);
         console.log("   Pickup Member ID:", session.pickup_member_id || 0);
+        console.log("   Queue ID:", session.queue_id || 'N/A');
         console.log("=====================================\n");
         return {
           id: session.id,
-          pickup_member_id: session.pickup_member_id || 0
+          pickup_member_id: session.pickup_member_id || 0,
+          queue_id: session.queue_id || null
         };
       } else {
         console.log("❌ No se encontró sesión que coincida con el número");
@@ -264,7 +269,7 @@ async function sendMessage(to, text) {
 }
 
 // 💬 Función auxiliar para hacer pickup y transferencia
-async function pickupAndTransfer(sessionData, destinationId, queueName, messageToSend) {
+async function pickupAndTransfer(sessionData, destinationId, queueName, messageToSend, userId) {
   if (!sessionData) {
     console.error(`❌ No se encontró sessionData para transferir a ${queueName}`);
     return;
@@ -283,6 +288,10 @@ async function pickupAndTransfer(sessionData, destinationId, queueName, messageT
 
     // Transferir con el pickup_member_id obtenido
     await transferSession(sessionData.id, destinationId, pickupMemberId);
+
+    // 🗂️ Guardar tracking de cola para detectar futuras transferencias
+    console.log(`🗂️ Guardando tracking: Usuario ${userId} → Cola ${destinationId} (${queueName})`);
+    userQueue[userId] = destinationId;
   } catch (err) {
     console.error(`❌ Error al transferir a ${queueName}:`, err);
   }
@@ -302,19 +311,53 @@ async function getFlowResponse(userId, message, userNo) {
 
   console.log("🔍 Buscando sessionData en Yeastar para:", userNo);
   const sessionData = await getSessionIdByNumber(userNo);
-  console.log("📋 SessionData obtenido:", sessionData ? `ID: ${sessionData.id}, Pickup: ${sessionData.pickup_member_id}` : "❌ No encontrado");
+  console.log("📋 SessionData obtenido:", sessionData ? `ID: ${sessionData.id}, Pickup: ${sessionData.pickup_member_id}, Queue: ${sessionData.queue_id}` : "❌ No encontrado");
 
-  // 🤖 SILENCIAR BOT si hay un agente activo (pickup_member_id > 0)
-  if (sessionData && sessionData.pickup_member_id > 0) {
-    console.log("🔇 BOT SILENCIADO - Agente activo con pickup_member_id:", sessionData.pickup_member_id);
-    console.log("   Estado del usuario:", state);
-    console.log("   El agente de Yeastar está atendiendo, bot no responderá");
-    console.log("   Bot NO modificará estados ni enviará mensajes");
-    console.log("====================================\n");
-    return ""; // No responder nada, dejar que el agente maneje la conversación
+  // 🤖 LÓGICA DE DETECCIÓN: Sesión cerrada vs Transferida
+  const lastKnownQueue = userQueue[userId];
+  const currentQueue = sessionData?.queue_id || null;
+  const hasActiveAgent = sessionData && sessionData.pickup_member_id > 0;
+
+  console.log("🔍 ANÁLISIS DE SESIÓN:");
+  console.log("   - Cola anterior guardada:", lastKnownQueue || "ninguna");
+  console.log("   - Cola actual en Yeastar:", currentQueue || "ninguna");
+  console.log("   - Agente activo (pickup_member_id > 0):", hasActiveAgent);
+
+  // CASO 1: Sesión no existe → Chat cerrado completamente
+  if (!sessionData) {
+    console.log("✅ CASO 1: Sesión no existe → Chat cerrado, bot ACTIVO");
+    console.log("   Limpiando tracking de cola para usuario:", userId);
+    delete userQueue[userId];
+  }
+  // CASO 2: Sesión existe con agente activo
+  else if (hasActiveAgent) {
+    // Sub-caso 2A: Cambió de cola (transferencia) → Agente sigue activo
+    if (lastKnownQueue && currentQueue && lastKnownQueue !== currentQueue) {
+      console.log("🔄 CASO 2A: Transferencia detectada → Chat activo en nueva cola, bot SILENCIADO");
+      console.log(`   Cola cambió: ${lastKnownQueue} → ${currentQueue}`);
+      console.log(`   Agente activo en nueva cola (pickup: ${sessionData.pickup_member_id})`);
+      userQueue[userId] = currentQueue; // Actualizar tracking
+      console.log("====================================\n");
+      return ""; // Silenciar bot
+    }
+    // Sub-caso 2B: Mismo cola o primera vez con agente → Agente activo
+    else {
+      console.log("🔇 CASO 2B: Agente activo en sesión → Bot SILENCIADO");
+      console.log(`   Agente con pickup_member_id: ${sessionData.pickup_member_id}`);
+      console.log(`   Cola actual: ${currentQueue}`);
+      if (currentQueue) userQueue[userId] = currentQueue; // Guardar tracking
+      console.log("====================================\n");
+      return ""; // Silenciar bot
+    }
+  }
+  // CASO 3: Sesión existe pero sin agente (pickup_member_id = 0)
+  else {
+    console.log("✅ CASO 3: Sesión existe sin agente → Agente cerró chat, bot ACTIVO");
+    console.log("   Limpiando tracking de cola para reactivar bot");
+    delete userQueue[userId];
   }
 
-  console.log("✅ BOT ACTIVO - No hay agente activo (pickup_member_id = 0 o null)");
+  console.log("✅ BOT ACTIVO - Procesando mensaje del usuario");
 
   switch (state) {
     case "START":
@@ -348,11 +391,11 @@ async function getFlowResponse(userId, message, userNo) {
         userState[userId] = "ASU_POST";
       } else if (message === "3") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_COBRANZAS"], "ASU_COBRANZAS", "✅ Solicitud enviada a Cobranzas Asunción.");
+        await pickupAndTransfer(sessionData, COLAS["ASU_COBRANZAS"], "ASU_COBRANZAS", "✅ Solicitud enviada a Cobranzas Asunción.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "4") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada. Te derivamos al sector correspondiente.");
+        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada. Te derivamos al sector correspondiente.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2, 3 o 4.";
@@ -361,18 +404,18 @@ async function getFlowResponse(userId, message, userNo) {
 
     case "ASU_VENTAS":
       userState[userId] = "FIN";
-      await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", "✅ Solicitud enviada a Ventas Asunción.");
+      await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", "✅ Solicitud enviada a Ventas Asunción.", userId);
       response = ""; // Mensaje ya enviado por Yeastar
       break;
 
     case "ASU_POST":
       if (message === "1") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_REPUESTOS"], "ASU_REPUESTOS", "✅ Solicitud enviada a Post Venta Asunción.");
+        await pickupAndTransfer(sessionData, COLAS["ASU_REPUESTOS"], "ASU_REPUESTOS", "✅ Solicitud enviada a Post Venta Asunción.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2" || message === "3") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada a Post Venta Asunción.");
+        await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada a Post Venta Asunción.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
@@ -382,7 +425,7 @@ async function getFlowResponse(userId, message, userNo) {
     case "MENU_CDE":
       if (message === "1") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_VENDEDORES"], "CDE_VENDEDORES", "✅ Solicitud enviada a Ventas CDE.");
+        await pickupAndTransfer(sessionData, COLAS["CDE_VENDEDORES"], "CDE_VENDEDORES", "✅ Solicitud enviada a Ventas CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2") {
         response =
@@ -390,7 +433,7 @@ async function getFlowResponse(userId, message, userNo) {
         userState[userId] = "CDE_POST";
       } else if (message === "3") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_COBRANZAS"], "CDE_COBRANZAS", "✅ Solicitud enviada a Cobranzas CDE.");
+        await pickupAndTransfer(sessionData, COLAS["CDE_COBRANZAS"], "CDE_COBRANZAS", "✅ Solicitud enviada a Cobranzas CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
@@ -400,11 +443,11 @@ async function getFlowResponse(userId, message, userNo) {
     case "CDE_POST":
       if (message === "1") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_REPUESTOS"], "CDE_REPUESTOS", "✅ Solicitud enviada a Post Venta CDE.");
+        await pickupAndTransfer(sessionData, COLAS["CDE_REPUESTOS"], "CDE_REPUESTOS", "✅ Solicitud enviada a Post Venta CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2" || message === "3") {
         userState[userId] = "FIN";
-        await pickupAndTransfer(sessionData, COLAS["CDE_SERVICIOS"], "CDE_SERVICIOS", "✅ Solicitud enviada a Post Venta CDE.");
+        await pickupAndTransfer(sessionData, COLAS["CDE_SERVICIOS"], "CDE_SERVICIOS", "✅ Solicitud enviada a Post Venta CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
         response = "⚠️ Opción inválida. Escribí 1, 2 o 3.";
