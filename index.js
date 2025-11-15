@@ -304,6 +304,14 @@ async function getFlowResponse(userId, message, userNo) {
   const sessionData = await getSessionIdByNumber(userNo);
   console.log("📋 SessionData obtenido:", sessionData ? `ID: ${sessionData.id}, Pickup: ${sessionData.pickup_member_id}` : "❌ No encontrado");
 
+  // 🤖 SILENCIAR BOT si hay un agente activo (pickup_member_id > 0)
+  if (sessionData && sessionData.pickup_member_id > 0) {
+    console.log("🔇 BOT SILENCIADO - Agente activo con pickup_member_id:", sessionData.pickup_member_id);
+    console.log("   El agente de Yeastar está atendiendo, bot no responderá");
+    console.log("====================================\n");
+    return ""; // No responder nada, dejar que el agente maneje la conversación
+  }
+
   switch (state) {
     case "START":
       response =
@@ -400,8 +408,12 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "FIN":
-      response = "🙏 Gracias por comunicarte con VICAR. Si querés empezar de nuevo, escribí *Hola*.";
+      // Auto-restart: cuando agente cierra sesión, reiniciar automáticamente
+      console.log("🔄 Usuario en estado FIN, reiniciando automáticamente a START");
       userState[userId] = "START";
+      response =
+        "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
+      userState[userId] = "SELECCION_SUCURSAL";
       break;
 
     default:
