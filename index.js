@@ -313,48 +313,41 @@ async function getFlowResponse(userId, message, userNo) {
   const sessionData = await getSessionIdByNumber(userNo);
   console.log("📋 SessionData obtenido:", sessionData ? `ID: ${sessionData.id}, Pickup: ${sessionData.pickup_member_id}, Queue: ${sessionData.queue_id}` : "❌ No encontrado");
 
-  // 🤖 LÓGICA DE DETECCIÓN: Sesión cerrada vs Transferida
-  const lastKnownQueue = userQueue[userId];
+  // 🤖 LÓGICA DE DETECCIÓN: Verificar si sesión está activa en la cola esperada
+  const expectedQueue = userQueue[userId];
   const currentQueue = sessionData?.queue_id || null;
   const hasActiveAgent = sessionData && sessionData.pickup_member_id > 0;
 
   console.log("🔍 ANÁLISIS DE SESIÓN:");
-  console.log("   - Cola anterior guardada:", lastKnownQueue || "ninguna");
+  console.log("   - Cola esperada (después de transferencia):", expectedQueue || "ninguna");
   console.log("   - Cola actual en Yeastar:", currentQueue || "ninguna");
   console.log("   - Agente activo (pickup_member_id > 0):", hasActiveAgent);
 
-  // CASO 1: Sesión no existe → Chat cerrado completamente
-  if (!sessionData) {
-    console.log("✅ CASO 1: Sesión no existe → Chat cerrado, bot ACTIVO");
-    console.log("   Limpiando tracking de cola para usuario:", userId);
-    delete userQueue[userId];
+  // CASO 1: Usuario fue transferido a una cola Y la sesión sigue activa en esa misma cola
+  if (expectedQueue && sessionData && currentQueue === expectedQueue) {
+    console.log("🔇 CASO 1: Sesión activa en cola esperada → Bot SILENCIADO");
+    console.log(`   Usuario está en cola ${currentQueue} como se esperaba`);
+    console.log(`   Pickup member: ${sessionData.pickup_member_id}`);
+    console.log("====================================\n");
+    return ""; // Silenciar bot - el usuario está siendo atendido o en espera en la cola correcta
   }
-  // CASO 2: Sesión existe con agente activo
-  else if (hasActiveAgent) {
-    // Sub-caso 2A: Cambió de cola (transferencia) → Agente sigue activo
-    if (lastKnownQueue && currentQueue && lastKnownQueue !== currentQueue) {
-      console.log("🔄 CASO 2A: Transferencia detectada → Chat activo en nueva cola, bot SILENCIADO");
-      console.log(`   Cola cambió: ${lastKnownQueue} → ${currentQueue}`);
-      console.log(`   Agente activo en nueva cola (pickup: ${sessionData.pickup_member_id})`);
-      userQueue[userId] = currentQueue; // Actualizar tracking
-      console.log("====================================\n");
-      return ""; // Silenciar bot
-    }
-    // Sub-caso 2B: Mismo cola o primera vez con agente → Agente activo
-    else {
-      console.log("🔇 CASO 2B: Agente activo en sesión → Bot SILENCIADO");
-      console.log(`   Agente con pickup_member_id: ${sessionData.pickup_member_id}`);
-      console.log(`   Cola actual: ${currentQueue}`);
-      if (currentQueue) userQueue[userId] = currentQueue; // Guardar tracking
-      console.log("====================================\n");
-      return ""; // Silenciar bot
-    }
-  }
-  // CASO 3: Sesión existe pero sin agente (pickup_member_id = 0)
-  else {
-    console.log("✅ CASO 3: Sesión existe sin agente → Agente cerró chat, bot ACTIVO");
+
+  // CASO 2: Usuario fue transferido pero la sesión ya no existe O cambió de cola
+  if (expectedQueue && (!sessionData || currentQueue !== expectedQueue)) {
+    console.log("✅ CASO 2: Sesión cerrada o cambió de cola → Bot ACTIVO");
+    console.log("   El agente cerró la conversación o la sesión no está en la cola esperada");
     console.log("   Limpiando tracking de cola para reactivar bot");
     delete userQueue[userId];
+    // Continuar para que el bot responda
+  }
+
+  // CASO 3: Usuario NO fue transferido aún, pero hay sesión activa con agente
+  if (!expectedQueue && sessionData && hasActiveAgent) {
+    console.log("🔇 CASO 3: Sesión con agente activo (sin transferencia previa) → Bot SILENCIADO");
+    console.log(`   Agente con pickup_member_id: ${sessionData.pickup_member_id}`);
+    console.log(`   Cola actual: ${currentQueue}`);
+    console.log("====================================\n");
+    return ""; // Silenciar bot
   }
 
   console.log("✅ BOT ACTIVO - Procesando mensaje del usuario");
