@@ -86,6 +86,130 @@ async function getAccessToken() {
   return accessToken;
 }
 
+// ✅ Obtener todas las extensiones de Yeastar (paginado)
+async function getAllExtensions() {
+  console.log("\n📋 === GET ALL EXTENSIONS ===");
+  const token = await getAccessToken();
+  const allExtensions = [];
+  let page = 1;
+  const pageSize = 100;
+
+  try {
+    while (true) {
+      const url = `https://vicar.ras.yeastar.com/openapi/v1.0/extension/list?page=${page}&page_size=${pageSize}&access_token=${token}`;
+      console.log(`🌐 Consultando página ${page}...`);
+
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'OpenAPI',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      const data = await res.json();
+
+      if (data.errcode !== 0) {
+        console.error(`❌ Error obteniendo extensiones: ${data.errmsg}`);
+        break;
+      }
+
+      if (data.data && data.data.length > 0) {
+        allExtensions.push(...data.data);
+        console.log(`✅ Página ${page}: ${data.data.length} extensiones`);
+
+        // Si hay más páginas, continuar
+        if (data.data.length === pageSize && allExtensions.length < data.total_number) {
+          page++;
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+
+    console.log(`✅ Total extensiones obtenidas: ${allExtensions.length}`);
+    console.log("=====================================\n");
+    return allExtensions;
+  } catch (err) {
+    console.error("❌ Excepción obteniendo extensiones:", err);
+    console.log("=====================================\n");
+    return [];
+  }
+}
+
+// ✅ Verificar si existe alguna sesión activa del usuario con cualquier extensión (optimizado con early exit)
+async function hasActiveAgentSession(userNo) {
+  console.log("\n🔍 === VERIFICAR SESIÓN ACTIVA CON AGENTES ===");
+  console.log("📞 Número de usuario:", userNo);
+
+  const token = await getAccessToken();
+  const normalizedUserNo = userNo.replace(/^\+/, '');
+  console.log("🔄 Número normalizado:", normalizedUserNo);
+
+  try {
+    // Obtener todas las extensiones
+    const extensions = await getAllExtensions();
+
+    if (extensions.length === 0) {
+      console.log("⚠️ No se encontraron extensiones");
+      console.log("=====================================\n");
+      return false;
+    }
+
+    console.log(`🔍 Verificando sesiones en ${extensions.length} extensiones...`);
+
+    // Iterar sobre cada extensión (con early exit)
+    for (let i = 0; i < extensions.length; i++) {
+      const extension = extensions[i];
+      const extensionNumber = extension.number;
+
+      console.log(`[${i + 1}/${extensions.length}] Verificando extensión ${extensionNumber}...`);
+
+      try {
+        const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=1&user_no=${extensionNumber}&page=1&page_size=20`;
+
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'OpenAPI',
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        });
+
+        const data = await res.json();
+
+        if (data.errcode === 0 && Array.isArray(data.list) && data.list.length > 0) {
+          // Buscar si alguna sesión corresponde al usuario
+          const userSession = data.list.find(s => {
+            const sessionUserNo = s.to?.user_no?.replace(/^\+/, '') || '';
+            return sessionUserNo === normalizedUserNo;
+          });
+
+          if (userSession) {
+            console.log(`✅ SESIÓN ENCONTRADA en extensión ${extensionNumber}!`);
+            console.log(`   Session ID: ${userSession.id}`);
+            console.log(`   Pickup Member ID: ${userSession.pickup_member_id || 0}`);
+            console.log(`   Queue ID: ${userSession.queue_id || 'N/A'}`);
+            console.log("=====================================\n");
+            return true; // Early exit - encontramos una sesión
+          }
+        }
+      } catch (err) {
+        console.error(`⚠️ Error verificando extensión ${extensionNumber}:`, err.message);
+        // Continuar con la siguiente extensión
+      }
+    }
+
+    console.log("❌ No se encontró ninguna sesión activa con agentes");
+    console.log("=====================================\n");
+    return false;
+  } catch (err) {
+    console.error("❌ Excepción verificando sesiones:", err);
+    console.log("=====================================\n");
+    return false;
+  }
+}
+
 // ✅ Buscar session activo de Yeastar por número de WhatsApp (retorna objeto completo)
 async function getSessionIdByNumber(userNo) {
   console.log("\n🔍 === GET SESSION ID BY NUMBER ===");
@@ -95,7 +219,7 @@ async function getSessionIdByNumber(userNo) {
   const userType = 1;
 
   try {
-    const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${450}&page=1&page_size=20`;
+    const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${128}&page=1&page_size=20`;
     console.log("🌐 URL de consulta:", url.replace(token, "***TOKEN***"));
 
     const res = await fetch(url);
@@ -157,7 +281,7 @@ async function pickupSession(sessionId, messageToSend) {
     const messageBody = {
       session_id: sessionId,
       sender_type: 1,
-      sender_no: "450",
+      sender_no: "128",
       msg_kind: 0,
       msg_type: 0,
       msg_body: messageToSend
@@ -448,12 +572,20 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "FIN":
-      // Auto-restart: cuando agente cierra sesión, reiniciar automáticamente
-      console.log("🔄 Usuario en estado FIN, reiniciando automáticamente a START");
-      userState[userId] = "START";
-      response =
-        "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
-      userState[userId] = "SELECCION_SUCURSAL";
+      // Verificar si existe sesión activa con algún agente
+      console.log("🔄 Usuario en estado FIN, verificando sesiones activas con agentes...");
+      const hasActiveSession = await hasActiveAgentSession(userNo);
+
+      if (hasActiveSession) {
+        console.log("🔇 SESIÓN ACTIVA DETECTADA → Bot permanece apagado");
+        response = ""; // Bot silenciado, el agente está atendiendo
+      } else {
+        console.log("✅ NO HAY SESIÓN ACTIVA → Reiniciando flujo del bot");
+        userState[userId] = "START";
+        response =
+          "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
+        userState[userId] = "SELECCION_SUCURSAL";
+      }
       break;
 
     default:
