@@ -615,19 +615,20 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "FIN":
-      // Verificar si existe sesión activa con algún agente
       console.log("🔄 Usuario en estado FIN, verificando sesiones activas con agentes...");
       const hasActiveSession = await hasActiveAgentSession(userNo);
 
       if (hasActiveSession) {
         console.log("🔇 SESIÓN ACTIVA DETECTADA → Bot permanece apagado");
-        response = ""; // Bot silenciado, el agente está atendiendo
+        response = "";
       } else {
         console.log("✅ NO HAY SESIÓN ACTIVA → Reiniciando flujo del bot");
-        userState[userId] = "START";
+
+        // FIX: reset correcto del flujo sin duplicar bienvenida
+        userState[userId] = "SELECCION_SUCURSAL";
+
         response =
           "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
-        userState[userId] = "SELECCION_SUCURSAL";
       }
       break;
 
