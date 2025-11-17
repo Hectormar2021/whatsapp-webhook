@@ -49,6 +49,26 @@ function isRealActiveSession(sessionData) {
   return true;
 }
 
+function isSessionTrulyActive(sessionData, expectedQueue) {
+  if (!sessionData) return false;
+
+  // Si está marcada como cerrada → NO activa
+  if (sessionData.is_close === 1) return false;
+
+  // Si pickup no existe → no está siendo atendida
+  if (!sessionData.pickup_member_id || sessionData.pickup_member_id === 0) {
+    return false;
+  }
+
+  // Si la cola no coincide, puede ser transferencia pendiente
+  if (expectedQueue && sessionData.queue_id !== expectedQueue) {
+    return false;
+  }
+
+  return true;
+}
+
+
 
 // ✅ Obtener token de Yeastar con renovación automática
 async function getAccessToken() {
@@ -456,7 +476,7 @@ async function getFlowResponse(userId, message, userNo) {
   const expectedQueue = userQueue[userId];
   const currentQueue = sessionData?.queue_id || null;
   //const hasActiveAgent = sessionData && sessionData.pickup_member_id > 0;
-  const realActive = isRealActiveSession(sessionData);
+  const realActive = isSessionTrulyActive(sessionData, expectedQueue);
   console.log("🔍 ANÁLISIS DE SESIÓN:");
   console.log("   - Cola esperada (después de transferencia):", expectedQueue || "ninguna");
   console.log("   - Cola actual en Yeastar:", currentQueue || "ninguna");
