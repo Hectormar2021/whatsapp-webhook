@@ -195,6 +195,12 @@ async function hasActiveAgentSession(userNo) {
       const extension = extensions[i];
       const extensionNumber = extension.number;
 
+      // Filtrar extensión 128 (usuario sistema WhatsApp)
+      if (extensionNumber === '128' || extensionNumber === 128) {
+        console.log(`[${i + 1}/${extensions.length}] ⏭️ Saltando extensión ${extensionNumber} (sistema WhatsApp)`);
+        continue;
+      }
+
       console.log(`[${i + 1}/${extensions.length}] Verificando extensión ${extensionNumber}...`);
 
       try {
