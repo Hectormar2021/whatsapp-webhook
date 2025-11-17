@@ -460,7 +460,7 @@ async function getFlowResponse(userId, message, userNo) {
   console.log("🔍 ANÁLISIS DE SESIÓN:");
   console.log("   - Cola esperada (después de transferencia):", expectedQueue || "ninguna");
   console.log("   - Cola actual en Yeastar:", currentQueue || "ninguna");
-  console.log("   - Agente activo (pickup_member_id > 0):", hasActiveAgent);
+  //console.log("   - Agente activo (pickup_member_id > 0):", hasActiveAgent);
 
   // CASO 1: Usuario fue transferido a una cola Y la sesión sigue activa en esa misma cola
   if (expectedQueue && sessionData && currentQueue === expectedQueue && realActive) {
