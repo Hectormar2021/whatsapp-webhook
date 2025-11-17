@@ -661,6 +661,7 @@ app.post("/webhook", async (req, res) => {
         const st = statuses[0];
 
         console.log("📋 Status recibido:", JSON.stringify(st, null, 2));
+        console.log("JSON ST: ", JSON.stringify(st, null, 2))
 
         if (st.conversation && st.conversation.expiration_timestamp) {
           const exp = st.conversation.expiration_timestamp;
@@ -677,6 +678,8 @@ app.post("/webhook", async (req, res) => {
           console.log("💾 expiration guardado en memoria para:", user);
         }
       } else {
+        console.log("⚠️ Status no contiene 'conversation'. No hay expiration_timestamp.");
+        console.log("ℹ️ Status.type:", st.status);
         console.log("⚠️ No hay statuses en el webhook");
       }
     }
