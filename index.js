@@ -195,9 +195,11 @@ async function hasActiveAgentSession(userNo) {
       const extension = extensions[i];
       const extensionNumber = extension.number;
 
-      // Filtrar extensión 128 (usuario sistema WhatsApp)
+      // FIX: ignorar ext 128 - Evita bucle infinito cuando agente cierra sesión en Linkus
+      // La ext 128 es la cola origen virtual del bot, NO es un agente humano real
+      // Si solo 128 tiene la sesión → debe considerarse como "sin agente activo"
       if (extensionNumber === '128' || extensionNumber === 128) {
-        console.log(`[${i + 1}/${extensions.length}] ⏭️ Saltando extensión ${extensionNumber} (sistema WhatsApp)`);
+        console.log(`[${i + 1}/${extensions.length}] 🔁 Ignorando extensión virtual 128 (cola origen del bot)`);
         continue;
       }
 
