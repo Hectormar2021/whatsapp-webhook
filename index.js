@@ -654,7 +654,31 @@ app.post("/webhook", async (req, res) => {
       }
     } else {
       console.log("⚠️ No hay mensajes en el webhook - podría ser un status update");
-      console.log("📋 Statuses:", changes?.statuses ? `${changes.statuses.length} status(es)` : "No hay statuses");
+
+      const statuses = changes?.statuses;
+
+      if (statuses && statuses.length > 0) {
+        const st = statuses[0];
+
+        console.log("📋 Status recibido:", JSON.stringify(st, null, 2));
+
+        if (st.conversation && st.conversation.expiration_timestamp) {
+          const exp = st.conversation.expiration_timestamp;
+          const convId = st.conversation.id;
+          const user = st.recipient_id;
+
+          console.log("🔥 EXPIRATION DETECTADO");
+          console.log("🆔 conversation.id:", convId);
+          console.log("⏳ expiration_timestamp:", exp, "→", new Date(exp * 1000).toISOString());
+
+          userState[user] = userState[user] || {};
+          userState[user].expiration = exp;
+
+          console.log("💾 expiration guardado en memoria para:", user);
+        }
+      } else {
+        console.log("⚠️ No hay statuses en el webhook");
+      }
     }
   } catch (err) {
     console.error("❌ ERROR CRÍTICO en /webhook:", err);
