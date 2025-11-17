@@ -39,6 +39,17 @@ const COLAS = {
 let accessToken = "";
 let tokenExpire = 0;
 
+function isRealActiveSession(sessionData) {
+  if (!sessionData) return false;
+
+  // Si Yeastar marca la sesión como cerrada → NO es activa
+  if (sessionData.is_close === 1) return false;
+
+  // Si is_close=0 → sesión potencialmente activa
+  return true;
+}
+
+
 // ✅ Obtener token de Yeastar con renovación automática
 async function getAccessToken() {
   console.log("\n🔐 === GET ACCESS TOKEN ===");
@@ -437,18 +448,22 @@ async function getFlowResponse(userId, message, userNo) {
   const sessionData = await getSessionIdByNumber(userNo);
   console.log("📋 SessionData obtenido:", sessionData ? `ID: ${sessionData.id}, Pickup: ${sessionData.pickup_member_id}, Queue: ${sessionData.queue_id}` : "❌ No encontrado");
 
+  if (sessionData && sessionData.is_close === 1) {
+    delete userQueue[userId];
+  }
+
   // 🤖 LÓGICA DE DETECCIÓN: Verificar si sesión está activa en la cola esperada
   const expectedQueue = userQueue[userId];
   const currentQueue = sessionData?.queue_id || null;
-  const hasActiveAgent = sessionData && sessionData.pickup_member_id > 0;
-
+  //const hasActiveAgent = sessionData && sessionData.pickup_member_id > 0;
+  const realActive = isRealActiveSession(sessionData);
   console.log("🔍 ANÁLISIS DE SESIÓN:");
   console.log("   - Cola esperada (después de transferencia):", expectedQueue || "ninguna");
   console.log("   - Cola actual en Yeastar:", currentQueue || "ninguna");
   console.log("   - Agente activo (pickup_member_id > 0):", hasActiveAgent);
 
   // CASO 1: Usuario fue transferido a una cola Y la sesión sigue activa en esa misma cola
-  if (expectedQueue && sessionData && currentQueue === expectedQueue) {
+  if (expectedQueue && sessionData && currentQueue === expectedQueue && realActive) {
     console.log("🔇 CASO 1: Sesión activa en cola esperada → Bot SILENCIADO");
     console.log(`   Usuario está en cola ${currentQueue} como se esperaba`);
     console.log(`   Pickup member: ${sessionData.pickup_member_id}`);
@@ -466,7 +481,7 @@ async function getFlowResponse(userId, message, userNo) {
   }
 
   // CASO 3: Usuario NO fue transferido aún, pero hay sesión activa con agente
-  if (!expectedQueue && sessionData && hasActiveAgent) {
+  if (!expectedQueue && realActive && sessionData.pickup_member_id > 0) {
     console.log("🔇 CASO 3: Sesión con agente activo (sin transferencia previa) → Bot SILENCIADO");
     console.log(`   Agente con pickup_member_id: ${sessionData.pickup_member_id}`);
     console.log(`   Cola actual: ${currentQueue}`);
