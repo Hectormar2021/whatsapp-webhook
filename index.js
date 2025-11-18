@@ -79,7 +79,8 @@ function isConversationExpired(userId) {
   console.log("\n⏱️ === VERIFICAR EXPIRACIÓN DE CONVERSACIÓN ===");
   console.log("👤 UserId:", userId);
 
-  if (!userState[userId] || !userState[userId].lastActivity) {
+  // Verificar si existe userState y si es un objeto con lastActivity
+  if (!userState[userId] || typeof userState[userId] !== 'object' || !userState[userId].lastActivity) {
     console.log("❌ No hay registro de actividad previa → Conversación nueva");
     console.log("===============================================\n");
     return false;
@@ -113,9 +114,9 @@ function updateConversationTimer(userId) {
   const now = Date.now();
   const expirationTime = now + CONVERSATION_TTL_MS;
 
-  // Inicializar userState si no existe
-  if (!userState[userId]) {
-    userState[userId] = {};
+  // Inicializar userState si no existe o si es un string (migración de estructura antigua)
+  if (!userState[userId] || typeof userState[userId] !== 'object') {
+    userState[userId] = { state: "START" };
   }
 
   userState[userId].lastActivity = now;
@@ -458,11 +459,23 @@ async function getFlowResponse(userId, message, userNo) {
   // ⏱️ VERIFICAR EXPIRACIÓN ADICIONAL (doble verificación por seguridad)
   if (isConversationExpired(userId)) {
     console.log("🔄 [getFlowResponse] Conversación expirada detectada → Forzando START");
-    userState[userId] = "START";
+    userState[userId] = { state: "START", lastActivity: Date.now() };
     delete userQueue[userId];
   }
 
-  let state = userState[userId] || "START";
+  // Obtener estado - manejar tanto estructura antigua (string) como nueva (objeto)
+  let state;
+  if (!userState[userId]) {
+    state = "START";
+    userState[userId] = { state: "START", lastActivity: Date.now() };
+  } else if (typeof userState[userId] === 'string') {
+    // Migración: convertir string antiguo a objeto nuevo
+    state = userState[userId];
+    userState[userId] = { state: state, lastActivity: Date.now() };
+  } else {
+    state = userState[userId].state || "START";
+  }
+
   console.log("📊 Estado actual:", state);
 
   let response = "";
@@ -518,18 +531,18 @@ async function getFlowResponse(userId, message, userNo) {
     case "START":
       response =
         "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
-      userState[userId] = "SELECCION_SUCURSAL";
+      userState[userId].state = "SELECCION_SUCURSAL";
       break;
 
     case "SELECCION_SUCURSAL":
       if (message === "1") {
         response =
           "Sucursal Asunción. Selecciona una opción:\n1. Ventas Vehículos\n2. Post Venta\n3. Cobranzas\n4. Otros";
-        userState[userId] = "MENU_ASU";
+        userState[userId].state = "MENU_ASU";
       } else if (message === "2") {
         response =
           "Sucursal Ciudad del Este. Selecciona una opción:\n1. Ventas de Vehículos\n2. Post Venta\n3. Cobranzas";
-        userState[userId] = "MENU_CDE";
+        userState[userId].state = "MENU_CDE";
       } else {
         response = "⚠️ Opción inválida. Escribí 1 o 2.";
       }
@@ -539,17 +552,17 @@ async function getFlowResponse(userId, message, userNo) {
       if (message === "1") {
         response =
           "Ventas Vehiculos. Elegí una opción:\n1. Vehículos OKM\n2. Vehículos usados";
-        userState[userId] = "ASU_VENTAS";
+        userState[userId].state = "ASU_VENTAS";
       } else if (message === "2") {
         response =
           "Post Venta Asunción. Elegí una opción:\n1. Ventas de repuestos\n2. Turno de Servicio\n3. Estado de vehículo";
-        userState[userId] = "ASU_POST";
+        userState[userId].state = "ASU_POST";
       } else if (message === "3") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["ASU_COBRANZAS"], "ASU_COBRANZAS", "✅ Solicitud enviada a Cobranzas Asunción.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "4") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada. Te derivamos al sector correspondiente.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
@@ -558,18 +571,18 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "ASU_VENTAS":
-      userState[userId] = "FIN";
+      userState[userId].state = "FIN";
       await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", "✅ Solicitud enviada a Ventas Asunción.", userId);
       response = ""; // Mensaje ya enviado por Yeastar
       break;
 
     case "ASU_POST":
       if (message === "1") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["ASU_REPUESTOS"], "ASU_REPUESTOS", "✅ Solicitud enviada a Post Venta Asunción.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2" || message === "3") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["ASU_SERVICIOS"], "ASU_SERVICIOS", "✅ Solicitud enviada a Post Venta Asunción.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
@@ -579,15 +592,15 @@ async function getFlowResponse(userId, message, userNo) {
 
     case "MENU_CDE":
       if (message === "1") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["CDE_VENDEDORES"], "CDE_VENDEDORES", "✅ Solicitud enviada a Ventas CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2") {
         response =
           "Post Venta CDE. Elegí una opción:\n1. Ventas de repuestos\n2. Turno de Servicio\n3. Estado de vehículo";
-        userState[userId] = "CDE_POST";
+        userState[userId].state = "CDE_POST";
       } else if (message === "3") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["CDE_COBRANZAS"], "CDE_COBRANZAS", "✅ Solicitud enviada a Cobranzas CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
@@ -597,11 +610,11 @@ async function getFlowResponse(userId, message, userNo) {
 
     case "CDE_POST":
       if (message === "1") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["CDE_REPUESTOS"], "CDE_REPUESTOS", "✅ Solicitud enviada a Post Venta CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else if (message === "2" || message === "3") {
-        userState[userId] = "FIN";
+        userState[userId].state = "FIN";
         await pickupAndTransfer(sessionData, COLAS["CDE_SERVICIOS"], "CDE_SERVICIOS", "✅ Solicitud enviada a Post Venta CDE.", userId);
         response = ""; // Mensaje ya enviado por Yeastar
       } else {
@@ -621,7 +634,7 @@ async function getFlowResponse(userId, message, userNo) {
         console.log("✅ NO HAY SESIÓN ACTIVA → Reiniciando flujo del bot");
 
         // FIX: reset correcto del flujo - ir directo a SELECCION_SUCURSAL sin pasar por START
-        userState[userId] = "SELECCION_SUCURSAL";
+        userState[userId].state = "SELECCION_SUCURSAL";
 
         response =
           "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
@@ -630,11 +643,11 @@ async function getFlowResponse(userId, message, userNo) {
 
     default:
       response = "👋 Hola, ¡Bienvenido a VICAR!\nEscribí 'Hola' para comenzar.";
-      userState[userId] = "START";
+      userState[userId].state = "START";
       break;
   }
 
-  console.log("📊 Nuevo estado:", userState[userId]);
+  console.log("📊 Nuevo estado:", userState[userId].state);
   console.log("💬 Respuesta a enviar:", response);
   console.log("====================================\n");
 
@@ -703,7 +716,7 @@ app.post("/webhook", async (req, res) => {
       // ⏱️ VERIFICAR EXPIRACIÓN DE CONVERSACIÓN (24 horas)
       if (isConversationExpired(from)) {
         console.log("🔄 Conversación expirada → Reseteando estado a START");
-        userState[from] = "START";
+        userState[from] = { state: "START", lastActivity: Date.now() };
         delete userQueue[from];
       }
 
