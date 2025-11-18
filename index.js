@@ -23,6 +23,9 @@ const userQueue = {};
 // FIX: Cache simple de verificación de sesión activa (3 segundos TTL)
 const sessionCache = {};
 
+// ⏱️ TTL de conversación: 24 horas (en milisegundos)
+const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
+
 // 📌 Mapeo de colas fijas (v3)
 const COLAS = {
   // Asunción
@@ -71,7 +74,57 @@ function isSessionTrulyActive(sessionData, expectedQueue) {
   return true;
 }
 
+// ⏱️ Verificar si una conversación ha expirado (24 horas de inactividad)
+function isConversationExpired(userId) {
+  console.log("\n⏱️ === VERIFICAR EXPIRACIÓN DE CONVERSACIÓN ===");
+  console.log("👤 UserId:", userId);
 
+  if (!userState[userId] || !userState[userId].lastActivity) {
+    console.log("❌ No hay registro de actividad previa → Conversación nueva");
+    console.log("===============================================\n");
+    return false;
+  }
+
+  const now = Date.now();
+  const lastActivity = userState[userId].lastActivity;
+  const timeSinceLastActivity = now - lastActivity;
+  const timeRemaining = CONVERSATION_TTL_MS - timeSinceLastActivity;
+
+  console.log("📅 Última actividad:", new Date(lastActivity).toISOString());
+  console.log("⏰ Tiempo transcurrido:", Math.floor(timeSinceLastActivity / 1000 / 60), "minutos");
+  console.log("⏳ Tiempo restante:", Math.floor(timeRemaining / 1000 / 60), "minutos");
+
+  if (timeSinceLastActivity >= CONVERSATION_TTL_MS) {
+    console.log("🔴 CONVERSACIÓN EXPIRADA → Reiniciando flujo");
+    console.log("===============================================\n");
+    return true;
+  }
+
+  console.log("✅ Conversación activa → Continuar flujo normal");
+  console.log("===============================================\n");
+  return false;
+}
+
+// ⏱️ Actualizar timer de conversación (resetear 24h)
+function updateConversationTimer(userId) {
+  console.log("\n⏱️ === ACTUALIZAR TIMER DE CONVERSACIÓN ===");
+  console.log("👤 UserId:", userId);
+
+  const now = Date.now();
+  const expirationTime = now + CONVERSATION_TTL_MS;
+
+  // Inicializar userState si no existe
+  if (!userState[userId]) {
+    userState[userId] = {};
+  }
+
+  userState[userId].lastActivity = now;
+
+  console.log("🔄 Timer reseteado a 24 horas");
+  console.log("📅 Timestamp actual:", new Date(now).toISOString());
+  console.log("⏰ Expira el:", new Date(expirationTime).toISOString());
+  console.log("===========================================\n");
+}
 
 // ✅ Obtener token de Yeastar con renovación automática
 async function getAccessToken() {
@@ -402,6 +455,13 @@ async function getFlowResponse(userId, message, userNo) {
   console.log("💬 Mensaje:", message);
   console.log("📞 UserNo:", userNo);
 
+  // ⏱️ VERIFICAR EXPIRACIÓN ADICIONAL (doble verificación por seguridad)
+  if (isConversationExpired(userId)) {
+    console.log("🔄 [getFlowResponse] Conversación expirada detectada → Forzando START");
+    userState[userId] = "START";
+    delete userQueue[userId];
+  }
+
   let state = userState[userId] || "START";
   console.log("📊 Estado actual:", state);
 
@@ -639,6 +699,16 @@ app.post("/webhook", async (req, res) => {
         res.sendStatus(200);
         return;
       }
+
+      // ⏱️ VERIFICAR EXPIRACIÓN DE CONVERSACIÓN (24 horas)
+      if (isConversationExpired(from)) {
+        console.log("🔄 Conversación expirada → Reseteando estado a START");
+        userState[from] = "START";
+        delete userQueue[from];
+      }
+
+      // ⏱️ ACTUALIZAR TIMER DE CONVERSACIÓN (resetear 24h)
+      updateConversationTimer(from);
 
       console.log("🔄 Procesando flujo conversacional...");
       const reply = await getFlowResponse(from, text, from);
