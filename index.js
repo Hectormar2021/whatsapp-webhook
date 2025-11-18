@@ -488,6 +488,24 @@ async function getFlowResponse(userId, message, userNo) {
     delete userQueue[userId];
   }
 
+  // 🛑 VERIFICACIÓN TEMPRANA: Si el usuario está en FIN y hay sesión activa → SILENCIAR BOT
+  if (state === "FIN") {
+    console.log("🔄 Usuario en estado FIN - Verificando si hay sesión activa...");
+    const hasActiveSession = await hasActiveAgentSession(userNo);
+
+    if (hasActiveSession) {
+      console.log("🔇 SESIÓN ACTIVA DETECTADA EN ESTADO FIN → Bot SILENCIADO (verificación temprana)");
+      console.log("   El agente está atendiendo al usuario");
+      console.log("====================================\n");
+      return ""; // Bot silenciado - no procesar más
+    } else {
+      console.log("✅ NO HAY SESIÓN ACTIVA → Reiniciando flujo del bot");
+      // Resetear estado para permitir que el bot responda
+      state = "SELECCION_SUCURSAL";
+      userState[userId].state = "SELECCION_SUCURSAL";
+    }
+  }
+
   // 🤖 LÓGICA DE DETECCIÓN: Verificar si sesión está activa en la cola esperada
   const expectedQueue = userQueue[userId];
   const currentQueue = sessionData?.queue_id || null;
@@ -623,22 +641,13 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "FIN":
-      // FIX: Verificación optimizada - ya no escanea 83 extensiones
-      console.log("🔄 Usuario en estado FIN, verificando sesión activa con agente...");
-      const hasActiveSession = await hasActiveAgentSession(userNo);
-
-      if (hasActiveSession) {
-        console.log("🔇 SESIÓN ACTIVA DETECTADA → Bot permanece apagado");
-        response = ""; // Bot silenciado, el agente está atendiendo
-      } else {
-        console.log("✅ NO HAY SESIÓN ACTIVA → Reiniciando flujo del bot");
-
-        // FIX: reset correcto del flujo - ir directo a SELECCION_SUCURSAL sin pasar por START
-        userState[userId].state = "SELECCION_SUCURSAL";
-
-        response =
-          "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
-      }
+      // NOTA: Este caso ya fue manejado en la verificación temprana (línea 492)
+      // Si llegamos aquí, es porque NO hay sesión activa y el estado ya fue cambiado a SELECCION_SUCURSAL
+      // Este case solo existe para compatibilidad, pero normalmente no debería ejecutarse
+      console.log("⚠️ Case FIN alcanzado - esto no debería ocurrir si la verificación temprana funcionó");
+      response =
+        "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
+      userState[userId].state = "SELECCION_SUCURSAL";
       break;
 
     default:
