@@ -13,16 +13,13 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const YEASTAR_USER = process.env.YEASTAR_USER;
 const YEASTAR_PASS = process.env.YEASTAR_PASS;
+const CONVERSATION_TTL_MS = proces.env.CONVERSATION_TTL_MS
 
 // 🗂️ Estado de conversación por usuario (en memoria)
 const userState = {};
 
 // 🗂️ Tracking de cola asignada por usuario (para detectar transferencias)
 const userQueue = {};
-
-// ⏱️ TTL de conversación: 24 horas (en milisegundos)
-//const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
-const CONVERSATION_TTL_MS = 1 * 60 * 1000;
 
 // 📌 Mapeo de colas fijas (v3)
 const COLAS = {
