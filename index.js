@@ -21,6 +21,9 @@ const userState = {};
 // 🗂️ Tracking de cola asignada por usuario (para detectar transferencias)
 const userQueue = {};
 
+// 🔒 Sistema de locking por usuario para prevenir condiciones de carrera
+const userLocks = {};
+
 // 📌 Mapeo de colas fijas (v3)
 const COLAS = {
   // Asunción
@@ -39,6 +42,19 @@ const COLAS = {
 // 🔹 Token Yeastar en memoria
 let accessToken = "";
 let tokenExpire = 0;
+
+// 🔒 Adquirir lock para un usuario específico
+async function acquireLock(userId) {
+  while (userLocks[userId]) {
+    await new Promise(r => setTimeout(r, 10));
+  }
+  userLocks[userId] = true;
+}
+
+// 🔓 Liberar lock de un usuario específico
+function releaseLock(userId) {
+  delete userLocks[userId];
+}
 
 // ⏱️ Verificar si una conversación ha expirado (24 horas de inactividad)
 function isConversationExpired(userId) {
@@ -588,27 +604,35 @@ app.post("/webhook", async (req, res) => {
         return;
       }
 
-      // ⏱️ VERIFICAR EXPIRACIÓN DE CONVERSACIÓN (24 horas)
-      if (isConversationExpired(from)) {
-        console.log("🔄 Conversación expirada → Reseteando estado a START");
-        userState[from] = { state: "START", lastActivity: Date.now() };
-        delete userQueue[from];
-      }
+      // 🔒 ADQUIRIR LOCK ANTES DE PROCESAR
+      await acquireLock(from);
 
-      // ⏱️ ACTUALIZAR TIMER DE CONVERSACIÓN (resetear 24h)
-      updateConversationTimer(from);
+      try {
+        // ⏱️ VERIFICAR EXPIRACIÓN DE CONVERSACIÓN (24 horas)
+        if (isConversationExpired(from)) {
+          console.log("🔄 Conversación expirada → Reseteando estado a START");
+          userState[from] = { state: "START", lastActivity: Date.now() };
+          delete userQueue[from];
+        }
 
-      console.log("🔄 Procesando flujo conversacional...");
-      const reply = await getFlowResponse(from, text, from);
+        // ⏱️ ACTUALIZAR TIMER DE CONVERSACIÓN (resetear 24h)
+        updateConversationTimer(from);
 
-      console.log("📤 Respuesta generada:", reply);
+        console.log("🔄 Procesando flujo conversacional...");
+        const reply = await getFlowResponse(from, text, from);
 
-      if (reply) {
-        console.log("📨 Enviando respuesta a WhatsApp...");
-        const sendResult = await sendMessage(from, reply);
-        console.log("✅ Mensaje enviado exitosamente");
-      } else {
-        console.log("⚠️ No se generó respuesta para enviar");
+        console.log("📤 Respuesta generada:", reply);
+
+        if (reply) {
+          console.log("📨 Enviando respuesta a WhatsApp...");
+          const sendResult = await sendMessage(from, reply);
+          console.log("✅ Mensaje enviado exitosamente");
+        } else {
+          console.log("⚠️ No se generó respuesta para enviar");
+        }
+      } finally {
+        // 🔓 LIBERAR LOCK SIEMPRE (incluso si hay errores)
+        releaseLock(from);
       }
     } else {
       console.log("⚠️ No hay mensajes en el webhook - podría ser un status update");
