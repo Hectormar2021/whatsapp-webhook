@@ -20,9 +20,6 @@ const userState = {};
 // 🗂️ Tracking de cola asignada por usuario (para detectar transferencias)
 const userQueue = {};
 
-// FIX: Cache simple de verificación de sesión activa (3 segundos TTL)
-const sessionCache = {};
-
 // ⏱️ TTL de conversación: 24 horas (en milisegundos)
 const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -44,35 +41,6 @@ const COLAS = {
 // 🔹 Token Yeastar en memoria
 let accessToken = "";
 let tokenExpire = 0;
-
-function isRealActiveSession(sessionData) {
-  if (!sessionData) return false;
-
-  // Si Yeastar marca la sesión como cerrada → NO es activa
-  if (sessionData.is_close === 1) return false;
-
-  // Si is_close=0 → sesión potencialmente activa
-  return true;
-}
-
-function isSessionTrulyActive(sessionData, expectedQueue) {
-  if (!sessionData) return false;
-
-  // Si está marcada como cerrada → NO activa
-  if (sessionData.is_close === 1) return false;
-
-  // Si pickup no existe → no está siendo atendida
-  if (!sessionData.pickup_member_id || sessionData.pickup_member_id === 0) {
-    return false;
-  }
-
-  // Si la cola no coincide, puede ser transferencia pendiente
-  if (expectedQueue && sessionData.queue_id !== expectedQueue) {
-    return false;
-  }
-
-  return true;
-}
 
 // ⏱️ Verificar si una conversación ha expirado (24 horas de inactividad)
 function isConversationExpired(userId) {
@@ -172,68 +140,6 @@ async function getAccessToken() {
 
   console.log("==============================\n");
   return accessToken;
-}
-
-// FIX: ELIMINADA getAllExtensions() - ya no se escanean 83 extensiones
-// El comportamiento anterior causaba bucles y mensajes duplicados
-
-// FIX: Verificación optimizada de sesión activa - SOLO consulta la sesión del usuario específico
-// YA NO itera sobre todas las extensiones (eliminamos las 83 llamadas API)
-async function hasActiveAgentSession(userNo) {
-  console.log("\n🔍 === VERIFICAR SESIÓN ACTIVA (OPTIMIZADO) ===");
-  console.log("📞 Número de usuario:", userNo);
-
-  // FIX: Cache de 3 segundos para evitar spam de consultas en webhooks duplicados
-  const now = Date.now();
-  if (sessionCache[userNo] && sessionCache[userNo].expires > now) {
-    console.log("✅ Usando cache (TTL 3s):", sessionCache[userNo].active ? "Sesión activa" : "Sin sesión");
-    console.log("=====================================\n");
-    return sessionCache[userNo].active;
-  }
-
-  try {
-    // FIX: SOLO obtener la sesión del usuario específico (1 llamada API en lugar de 83)
-    const sessionData = await getSessionIdByNumber(userNo);
-
-    // Caso 1: No hay sesión → bot debe estar activo
-    if (!sessionData) {
-      console.log("❌ No hay sesión en Yeastar → Bot ACTIVO");
-      sessionCache[userNo] = { active: false, expires: now + 3000 };
-      console.log("=====================================\n");
-      return false;
-    }
-
-    // Caso 2: Sesión existe pero está cerrada → bot activo
-    if (sessionData.is_close === 1) {
-      console.log("❌ Sesión marcada como cerrada → Bot ACTIVO");
-      sessionCache[userNo] = { active: false, expires: now + 3000 };
-      console.log("=====================================\n");
-      return false;
-    }
-
-    // Caso 3: Sesión tiene pickup_member_id > 0 → agente humano atendiendo → bot silenciado
-    if (sessionData.pickup_member_id && sessionData.pickup_member_id > 0) {
-      console.log(`✅ SESIÓN ACTIVA CON AGENTE (pickup_member_id: ${sessionData.pickup_member_id}) → Bot SILENCIADO`);
-      console.log(`   Session ID: ${sessionData.id}`);
-      console.log(`   Queue ID: ${sessionData.queue_id || 'N/A'}`);
-      sessionCache[userNo] = { active: true, expires: now + 3000 };
-      console.log("=====================================\n");
-      return true;
-    }
-
-    // Caso 4: Sesión existe sin pickup → no hay agente atendiendo → bot activo
-    console.log("❌ Sesión sin pickup (agente no asignado) → Bot ACTIVO");
-    sessionCache[userNo] = { active: false, expires: now + 3000 };
-    console.log("=====================================\n");
-    return false;
-
-  } catch (err) {
-    console.error("❌ Excepción verificando sesión:", err);
-    console.log("⚠️ Por seguridad, asumiendo bot ACTIVO ante error");
-    console.log("=====================================\n");
-    // En caso de error, mejor que el bot responda
-    return false;
-  }
 }
 
 // ✅ Buscar session activo de Yeastar por número de WhatsApp (retorna objeto completo)
