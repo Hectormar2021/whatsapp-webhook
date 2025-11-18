@@ -21,7 +21,8 @@ const userState = {};
 const userQueue = {};
 
 // ⏱️ TTL de conversación: 24 horas (en milisegundos)
-const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
+//const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
+const CONVERSATION_TTL_MS = 1 * 60 * 1000;
 
 // 📌 Mapeo de colas fijas (v3)
 const COLAS = {
