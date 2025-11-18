@@ -631,7 +631,7 @@ app.post("/webhook", async (req, res) => {
           console.log("⚠️ No se generó respuesta para enviar");
         }
       } finally {
-        // 🔓 LIBERAR LOCK SIEMPRE (incluso si hay errores)
+        // 🔓 LIBERAR LOCK SIEMPRE
         releaseLock(from);
       }
     } else {
