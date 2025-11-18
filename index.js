@@ -456,11 +456,16 @@ async function getFlowResponse(userId, message, userNo) {
   console.log("💬 Mensaje:", message);
   console.log("📞 UserNo:", userNo);
 
-  // ⏱️ VERIFICAR EXPIRACIÓN ADICIONAL (doble verificación por seguridad)
-  if (isConversationExpired(userId)) {
-    console.log("🔄 [getFlowResponse] Conversación expirada detectada → Forzando START");
+  // ⏱️ REGLA DE NEGOCIO #1: VERIFICAR TIMER PRIMERO (tiene prioridad absoluta)
+  const conversationExpired = isConversationExpired(userId);
+
+  if (conversationExpired) {
+    console.log("🔴 TIMER EXPIRADO (24h) → BOT REACTIVADO AUTOMÁTICAMENTE");
+    console.log("   Asumiendo nueva conversación - la anterior finalizó");
+    console.log("   Reseteando estado a START");
     userState[userId] = { state: "START", lastActivity: Date.now() };
     delete userQueue[userId];
+    console.log("====================================\n");
   }
 
   // Obtener estado - manejar tanto estructura antigua (string) como nueva (objeto)
@@ -477,8 +482,22 @@ async function getFlowResponse(userId, message, userNo) {
   }
 
   console.log("📊 Estado actual:", state);
+  console.log("⏱️ Timer expirado:", conversationExpired ? "SÍ" : "NO");
 
   let response = "";
+
+  // ⏱️ REGLA DE NEGOCIO #2: Si estado = FIN Y timer NO expirado → Bot SILENCIADO
+  // (El agente está atendiendo y no han pasado 24h)
+  if (state === "FIN" && !conversationExpired) {
+    console.log("🔇 REGLA DE NEGOCIO: Estado FIN + Timer activo → Bot SILENCIADO");
+    console.log("   El bot se transfirió a agente y no han pasado 24h");
+    console.log("   Bot permanece silenciado hasta que expire el timer");
+    console.log("====================================\n");
+    return ""; // Bot silenciado - agente está atendiendo
+  }
+
+  // Si llegamos aquí: Timer expirado O estado != FIN → Bot debe estar ACTIVO
+  console.log("✅ BOT ACTIVO - Procesando mensaje del usuario");
 
   console.log("🔍 Buscando sessionData en Yeastar para:", userNo);
   const sessionData = await getSessionIdByNumber(userNo);
@@ -487,63 +506,6 @@ async function getFlowResponse(userId, message, userNo) {
   if (sessionData && sessionData.is_close === 1) {
     delete userQueue[userId];
   }
-
-  // 🛑 VERIFICACIÓN TEMPRANA: Si el usuario está en FIN y hay sesión activa → SILENCIAR BOT
-  if (state === "FIN") {
-    console.log("🔄 Usuario en estado FIN - Verificando si hay sesión activa...");
-    const hasActiveSession = await hasActiveAgentSession(userNo);
-
-    if (hasActiveSession) {
-      console.log("🔇 SESIÓN ACTIVA DETECTADA EN ESTADO FIN → Bot SILENCIADO (verificación temprana)");
-      console.log("   El agente está atendiendo al usuario");
-      console.log("====================================\n");
-      return ""; // Bot silenciado - no procesar más
-    } else {
-      console.log("✅ NO HAY SESIÓN ACTIVA → Reiniciando flujo del bot");
-      // Resetear estado para permitir que el bot responda
-      state = "SELECCION_SUCURSAL";
-      userState[userId].state = "SELECCION_SUCURSAL";
-    }
-  }
-
-  // 🤖 LÓGICA DE DETECCIÓN: Verificar si sesión está activa en la cola esperada
-  const expectedQueue = userQueue[userId];
-  const currentQueue = sessionData?.queue_id || null;
-  //const hasActiveAgent = sessionData && sessionData.pickup_member_id > 0;
-  const realActive = isSessionTrulyActive(sessionData, expectedQueue);
-  console.log("🔍 ANÁLISIS DE SESIÓN:");
-  console.log("   - Cola esperada (después de transferencia):", expectedQueue || "ninguna");
-  console.log("   - Cola actual en Yeastar:", currentQueue || "ninguna");
-  //console.log("   - Agente activo (pickup_member_id > 0):", hasActiveAgent);
-
-  // CASO 1: Usuario fue transferido a una cola Y la sesión sigue activa en esa misma cola
-  if (expectedQueue && sessionData && currentQueue === expectedQueue && realActive) {
-    console.log("🔇 CASO 1: Sesión activa en cola esperada → Bot SILENCIADO");
-    console.log(`   Usuario está en cola ${currentQueue} como se esperaba`);
-    console.log(`   Pickup member: ${sessionData.pickup_member_id}`);
-    console.log("====================================\n");
-    return ""; // Silenciar bot - el usuario está siendo atendido o en espera en la cola correcta
-  }
-
-  // CASO 2: Usuario fue transferido pero la sesión ya no existe O cambió de cola
-  if (expectedQueue && (!sessionData || currentQueue !== expectedQueue)) {
-    console.log("✅ CASO 2: Sesión cerrada o cambió de cola → Bot ACTIVO");
-    console.log("   El agente cerró la conversación o la sesión no está en la cola esperada");
-    console.log("   Limpiando tracking de cola para reactivar bot");
-    delete userQueue[userId];
-    // Continuar para que el bot responda
-  }
-
-  // CASO 3: Usuario NO fue transferido aún, pero hay sesión activa con agente
-  if (!expectedQueue && realActive && sessionData.pickup_member_id > 0) {
-    console.log("🔇 CASO 3: Sesión con agente activo (sin transferencia previa) → Bot SILENCIADO");
-    console.log(`   Agente con pickup_member_id: ${sessionData.pickup_member_id}`);
-    console.log(`   Cola actual: ${currentQueue}`);
-    console.log("====================================\n");
-    return ""; // Silenciar bot
-  }
-
-  console.log("✅ BOT ACTIVO - Procesando mensaje del usuario");
 
   switch (state) {
     case "START":
@@ -641,10 +603,10 @@ async function getFlowResponse(userId, message, userNo) {
       break;
 
     case "FIN":
-      // NOTA: Este caso ya fue manejado en la verificación temprana (línea 492)
-      // Si llegamos aquí, es porque NO hay sesión activa y el estado ya fue cambiado a SELECCION_SUCURSAL
-      // Este case solo existe para compatibilidad, pero normalmente no debería ejecutarse
-      console.log("⚠️ Case FIN alcanzado - esto no debería ocurrir si la verificación temprana funcionó");
+      // NOTA: Este caso solo se ejecuta si el timer EXPIRÓ (24h)
+      // Si timer NO expiró, ya se retornó "" en línea 491-496
+      // Si llegamos aquí = timer expiró → reiniciar flujo
+      console.log("🔄 Case FIN con timer expirado - Reiniciando flujo del bot");
       response =
         "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
       userState[userId].state = "SELECCION_SUCURSAL";
