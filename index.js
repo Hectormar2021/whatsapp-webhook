@@ -608,18 +608,14 @@ app.post("/webhook", async (req, res) => {
       await acquireLock(from);
 
       try {
-        // ⏱️ VERIFICAR EXPIRACIÓN DE CONVERSACIÓN (24 horas)
-        if (isConversationExpired(from)) {
-          console.log("🔄 Conversación expirada → Reseteando estado a START");
-          userState[from] = { state: "START", lastActivity: Date.now() };
-          delete userQueue[from];
-        }
-
-        // ⏱️ ACTUALIZAR TIMER DE CONVERSACIÓN (resetear 24h)
-        updateConversationTimer(from);
-
         console.log("🔄 Procesando flujo conversacional...");
         const reply = await getFlowResponse(from, text, from);
+
+        // ⏱️ ACTUALIZAR TIMER DE CONVERSACIÓN solo si el bot respondió
+        // Si reply está vacío = bot silenciado (agente activo), NO resetear timer
+        if (reply) {
+          updateConversationTimer(from);
+        }
 
         console.log("📤 Respuesta generada:", reply);
 
