@@ -15,6 +15,14 @@ const YEASTAR_USER = process.env.YEASTAR_USER;
 const YEASTAR_PASS = process.env.YEASTAR_PASS;
 const CONVERSATION_TTL_MS = parseInt(process.env.CONVERSATION_TTL_MS);
 
+// 🔧 V3.1 - Configuración de encendido/apagado general del bot
+const BOT_ON = process.env.BOT_ON === "true";
+
+// 🕐 V3.1 - Configuración de horario de atención
+const BUSINESS_OPEN_HOUR = parseInt(process.env.BUSINESS_OPEN_HOUR) || 0;
+const BUSINESS_CLOSED_HOUR = parseInt(process.env.BUSINESS_CLOSED_HOUR) || 24;
+const GENERIC_BOT_MESSAGE = process.env.GENERIC_BOT_MESSAGE || "Gracias por contactarnos. Nuestro horario de atención es limitado. Por favor, inténtalo más tarde.";
+
 // 🗂️ Estado de conversación por usuario (en memoria)
 const userState = {};
 
@@ -107,6 +115,25 @@ function updateConversationTimer(userId) {
   console.log("📅 Timestamp actual:", new Date(now).toISOString());
   console.log("⏰ Expira el:", new Date(expirationTime).toISOString());
   console.log("===========================================\n");
+}
+
+// 🕐 V3.1 - Verificar si el bot está dentro del horario de atención
+function isBusinessHours() {
+  console.log("\n🕐 === VERIFICAR HORARIO DE ATENCIÓN ===");
+
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  console.log("⏰ Hora actual:", currentHour);
+  console.log("🏢 Horario de apertura:", BUSINESS_OPEN_HOUR);
+  console.log("🏢 Horario de cierre:", BUSINESS_CLOSED_HOUR);
+
+  const isWithinHours = currentHour >= BUSINESS_OPEN_HOUR && currentHour < BUSINESS_CLOSED_HOUR;
+
+  console.log("✅ ¿Dentro de horario?:", isWithinHours ? "SÍ" : "NO");
+  console.log("========================================\n");
+
+  return isWithinHours;
 }
 
 // ✅ Obtener token de Yeastar con renovación automática
@@ -603,6 +630,38 @@ app.post("/webhook", async (req, res) => {
         res.sendStatus(200);
         return;
       }
+
+      // 🔧 V3.1 - VALIDACIÓN #1: Verificar si el bot está encendido
+      if (!BOT_ON) {
+        console.log("\n🔴 === BOT APAGADO ===");
+        console.log("⚠️ BOT_ON = false");
+        console.log("⛔ No se procesará el mensaje - Bot desactivado");
+        console.log("✅ Respondiendo 200 OK a WhatsApp sin procesar");
+        console.log("=======================\n");
+        res.sendStatus(200);
+        return;
+      }
+
+      // 🕐 V3.1 - VALIDACIÓN #2: Verificar horario de atención
+      if (!isBusinessHours()) {
+        console.log("\n🔴 === FUERA DE HORARIO ===");
+        console.log("⚠️ Mensaje recibido fuera del horario de atención");
+        console.log("📤 Enviando mensaje genérico al usuario");
+
+        try {
+          await sendMessage(from, GENERIC_BOT_MESSAGE);
+          console.log("✅ Mensaje genérico enviado exitosamente");
+        } catch (err) {
+          console.error("❌ Error al enviar mensaje genérico:", err);
+        }
+
+        console.log("✅ Respondiendo 200 OK a WhatsApp");
+        console.log("============================\n");
+        res.sendStatus(200);
+        return;
+      }
+
+      console.log("✅ Validaciones V3.1 pasadas - BOT ACTIVO y dentro de horario");
 
       // 🔒 ADQUIRIR LOCK ANTES DE PROCESAR
       await acquireLock(from);
