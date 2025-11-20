@@ -19,8 +19,8 @@ const CONVERSATION_TTL_MS = parseInt(process.env.CONVERSATION_TTL_MS);
 const BOT_ON = process.env.BOT_ON === "true";
 
 // 🕐 V3.1 - Configuración de horario de atención
-const BUSINESS_OPEN_HOUR = parseInt(process.env.BUSINESS_OPEN_HOUR) || 0;
-const BUSINESS_CLOSED_HOUR = parseInt(process.env.BUSINESS_CLOSED_HOUR) || 24;
+const BUSINESS_OPEN_HOUR = process.env.BUSINESS_OPEN_HOUR || "00:00";
+const BUSINESS_CLOSED_HOUR = process.env.BUSINESS_CLOSED_HOUR || "23:59";
 const GENERIC_BOT_MESSAGE = process.env.GENERIC_BOT_MESSAGE || "Gracias por contactarnos. Nuestro horario de atención es limitado. Por favor, inténtalo más tarde.";
 
 // 🗂️ Estado de conversación por usuario (en memoria)
@@ -121,8 +121,7 @@ function updateConversationTimer(userId) {
 function isBusinessHours() {
   console.log("\n🕐 === VERIFICAR HORARIO DE ATENCIÓN ===");
 
-  // Ajustar la hora a UTC-3 (Paraguay)
-  const now = new Date(Date.now() - 3 * 3600 * 1000);
+  const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   const [openH, openM] = BUSINESS_OPEN_HOUR.split(":").map(Number);
@@ -131,7 +130,7 @@ function isBusinessHours() {
   const openMinutes = openH * 60 + openM;
   const closeMinutes = closeH * 60 + closeM;
 
-  console.log("⏰ Hora actual (UTC-3):", now.toLocaleString("es-PY"));
+  console.log("⏰ Hora actual:", now.toLocaleTimeString("es-PY"));
   console.log("🏢 Apertura:", BUSINESS_OPEN_HOUR);
   console.log("🏢 Cierre:", BUSINESS_CLOSED_HOUR);
 
