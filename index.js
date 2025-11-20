@@ -15,6 +15,9 @@ const YEASTAR_USER = process.env.YEASTAR_USER;
 const YEASTAR_PASS = process.env.YEASTAR_PASS;
 const CONVERSATION_TTL_MS = parseInt(process.env.CONVERSATION_TTL_MS);
 
+// ⏱️ V3.1 - Timeout para flujos incompletos (estados intermedios sin derivación)
+const INACTIVE_FLOW_TTL_MS = parseInt(process.env.INACTIVE_FLOW_TTL_MS) || 1800000; // 30 minutos por defecto
+
 // 🔧 V3.1 - Configuración de encendido/apagado general del bot
 const BOT_ON = process.env.BOT_ON === "true";
 
@@ -64,7 +67,7 @@ function releaseLock(userId) {
   delete userLocks[userId];
 }
 
-// ⏱️ Verificar si una conversación ha expirado (24 horas de inactividad)
+// ⏱️ Verificar si una conversación ha expirado (TTL diferenciado según estado)
 function isConversationExpired(userId) {
   console.log("\n⏱️ === VERIFICAR EXPIRACIÓN DE CONVERSACIÓN ===");
   console.log("👤 UserId:", userId);
@@ -79,13 +82,20 @@ function isConversationExpired(userId) {
   const now = Date.now();
   const lastActivity = userState[userId].lastActivity;
   const timeSinceLastActivity = now - lastActivity;
-  const timeRemaining = CONVERSATION_TTL_MS - timeSinceLastActivity;
 
+  // V3.1 - Determinar TTL según el estado del usuario
+  const currentState = userState[userId].state || "START";
+  const isFinalState = currentState === "FIN";
+  const ttlToUse = isFinalState ? CONVERSATION_TTL_MS : INACTIVE_FLOW_TTL_MS;
+  const timeRemaining = ttlToUse - timeSinceLastActivity;
+
+  console.log("📊 Estado actual:", currentState);
+  console.log("⏱️ TTL aplicado:", isFinalState ? "24h (FIN)" : "30min (flujo incompleto)");
   console.log("📅 Última actividad:", new Date(lastActivity).toISOString());
   console.log("⏰ Tiempo transcurrido:", Math.floor(timeSinceLastActivity / 1000 / 60), "minutos");
   console.log("⏳ Tiempo restante:", Math.floor(timeRemaining / 1000 / 60), "minutos");
 
-  if (timeSinceLastActivity >= CONVERSATION_TTL_MS) {
+  if (timeSinceLastActivity >= ttlToUse) {
     console.log("🔴 CONVERSACIÓN EXPIRADA → Reiniciando flujo");
     console.log("===============================================\n");
     return true;
