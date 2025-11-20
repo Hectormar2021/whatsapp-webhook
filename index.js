@@ -121,19 +121,25 @@ function updateConversationTimer(userId) {
 function isBusinessHours() {
   console.log("\n🕐 === VERIFICAR HORARIO DE ATENCIÓN ===");
 
-  const now = new Date();
-  const currentHour = now.getHours();
+  // Ajustar la hora a UTC-3 (Paraguay)
+  const now = new Date(Date.now() - 3 * 3600 * 1000);
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-  console.log("⏰ Hora actual:", currentHour);
-  console.log("🏢 Horario de apertura:", BUSINESS_OPEN_HOUR);
-  console.log("🏢 Horario de cierre:", BUSINESS_CLOSED_HOUR);
+  const [openH, openM] = BUSINESS_OPEN_HOUR.split(":").map(Number);
+  const [closeH, closeM] = BUSINESS_CLOSED_HOUR.split(":").map(Number);
 
-  const isWithinHours = currentHour >= BUSINESS_OPEN_HOUR && currentHour < BUSINESS_CLOSED_HOUR;
+  const openMinutes = openH * 60 + openM;
+  const closeMinutes = closeH * 60 + closeM;
 
-  console.log("✅ ¿Dentro de horario?:", isWithinHours ? "SÍ" : "NO");
+  console.log("⏰ Hora actual (UTC-3):", now.toLocaleString("es-PY"));
+  console.log("🏢 Apertura:", BUSINESS_OPEN_HOUR);
+  console.log("🏢 Cierre:", BUSINESS_CLOSED_HOUR);
+
+  const isWithin = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+
+  console.log("✅ ¿Dentro de horario?:", isWithin ? "SÍ" : "NO");
   console.log("========================================\n");
-
-  return isWithinHours;
+  return isWithin;
 }
 
 // ✅ Obtener token de Yeastar con renovación automática
