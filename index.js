@@ -121,7 +121,7 @@ function updateConversationTimer(userId) {
 function isBusinessHours() {
   console.log("\n🕐 === VERIFICAR HORARIO DE ATENCIÓN ===");
 
-  const now = new Date();
+  const now = new Date(Date.now() - 3 * 3600 * 1000);
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   const [openH, openM] = BUSINESS_OPEN_HOUR.split(":").map(Number);
