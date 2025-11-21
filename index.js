@@ -669,7 +669,7 @@ app.post("/webhook", async (req, res) => {
         if (sessionData) {
           console.log("✅ Sesión encontrada - Derivando a cola SAC para gestión al día siguiente");
 
-          // Derivar a cola SAC
+          // Derivar a cola SAC (el mensaje se envía vía Yeastar para activar auto-pickup)
           await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", GENERIC_BOT_MESSAGE, from);
 
           // Establecer estado FIN para silenciar bot
@@ -677,16 +677,15 @@ app.post("/webhook", async (req, res) => {
 
           console.log("✅ Derivación a SAC completada - Estado: FIN");
         } else {
-          console.log("⚠️ No se encontró sesión activa - Solo se enviará mensaje genérico");
-        }
+          // Solo enviar mensaje vía WhatsApp API si NO hay sesión activa
+          console.log("⚠️ No se encontró sesión activa - Enviando mensaje genérico vía WhatsApp API");
 
-        console.log("📤 Enviando mensaje genérico al usuario");
-
-        try {
-          await sendMessage(from, GENERIC_BOT_MESSAGE);
-          console.log("✅ Mensaje genérico enviado exitosamente");
-        } catch (err) {
-          console.error("❌ Error al enviar mensaje genérico:", err);
+          try {
+            await sendMessage(from, GENERIC_BOT_MESSAGE);
+            console.log("✅ Mensaje genérico enviado exitosamente");
+          } catch (err) {
+            console.error("❌ Error al enviar mensaje genérico:", err);
+          }
         }
 
         console.log("✅ Respondiendo 200 OK a WhatsApp");
