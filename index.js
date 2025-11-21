@@ -661,31 +661,40 @@ app.post("/webhook", async (req, res) => {
       if (!isBusinessHours()) {
         console.log("\n🔴 === FUERA DE HORARIO ===");
         console.log("⚠️ Mensaje recibido fuera del horario de atención");
-        console.log("🔍 Obteniendo sesión para derivar a cola SAC...");
 
-        // Obtener sesión activa del usuario
-        const sessionData = await getSessionIdByNumber(from);
+        // 🔒 ADQUIRIR LOCK PARA CONTROL DE CONCURRENCIA
+        await acquireLock(from);
 
-        if (sessionData) {
-          console.log("✅ Sesión encontrada - Derivando a cola SAC para gestión al día siguiente");
+        try {
+          console.log("🔍 Obteniendo sesión para derivar a cola SAC...");
 
-          // Derivar a cola SAC (el mensaje se envía vía Yeastar para activar auto-pickup)
-          await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", GENERIC_BOT_MESSAGE, from);
+          // Obtener sesión activa del usuario
+          const sessionData = await getSessionIdByNumber(from);
 
-          // Establecer estado FIN para silenciar bot
-          userState[from] = { state: "FIN", lastActivity: Date.now() };
+          if (sessionData) {
+            console.log("✅ Sesión encontrada - Derivando a cola SAC para gestión al día siguiente");
 
-          console.log("✅ Derivación a SAC completada - Estado: FIN");
-        } else {
-          // Solo enviar mensaje vía WhatsApp API si NO hay sesión activa
-          console.log("⚠️ No se encontró sesión activa - Enviando mensaje genérico vía WhatsApp API");
+            // Derivar a cola SAC (el mensaje se envía vía Yeastar para activar auto-pickup)
+            await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", GENERIC_BOT_MESSAGE, from);
 
-          try {
-            await sendMessage(from, GENERIC_BOT_MESSAGE);
-            console.log("✅ Mensaje genérico enviado exitosamente");
-          } catch (err) {
-            console.error("❌ Error al enviar mensaje genérico:", err);
+            // Establecer estado FIN para silenciar bot
+            userState[from] = { state: "FIN", lastActivity: Date.now() };
+
+            console.log("✅ Derivación a SAC completada - Estado: FIN");
+          } else {
+            // Solo enviar mensaje vía WhatsApp API si NO hay sesión activa
+            console.log("⚠️ No se encontró sesión activa - Enviando mensaje genérico vía WhatsApp API");
+
+            try {
+              await sendMessage(from, GENERIC_BOT_MESSAGE);
+              console.log("✅ Mensaje genérico enviado exitosamente");
+            } catch (err) {
+              console.error("❌ Error al enviar mensaje genérico:", err);
+            }
           }
+        } finally {
+          // 🔓 LIBERAR LOCK SIEMPRE
+          releaseLock(from);
         }
 
         console.log("✅ Respondiendo 200 OK a WhatsApp");
