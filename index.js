@@ -621,6 +621,10 @@ app.post("/webhook", async (req, res) => {
   console.log("\n📩 === WEBHOOK POST - MENSAJE RECIBIDO ===");
   console.log("📥 Body completo:", JSON.stringify(req.body, null, 2));
 
+
+  // 🔒 ADQUIRIR LOCK ANTES DE PROCESAR
+  await acquireLock(from);
+
   try {
     const entry = req.body.entry?.[0];
     console.log("📦 Entry:", entry ? "✅ Presente" : "❌ No encontrado");
@@ -685,6 +689,9 @@ app.post("/webhook", async (req, res) => {
             console.log("✅ Mensaje genérico enviado exitosamente");
           } catch (err) {
             console.error("❌ Error al enviar mensaje genérico:", err);
+          } finally {
+            // 🔓 LIBERAR LOCK SIEMPRE
+            releaseLock(from);
           }
         }
 
@@ -695,9 +702,6 @@ app.post("/webhook", async (req, res) => {
       }
 
       console.log("✅ Validaciones V3.1 pasadas - BOT ACTIVO y dentro de horario");
-
-      // 🔒 ADQUIRIR LOCK ANTES DE PROCESAR
-      await acquireLock(from);
 
       try {
         console.log("🔄 Procesando flujo conversacional...");
