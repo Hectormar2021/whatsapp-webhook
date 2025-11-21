@@ -661,6 +661,25 @@ app.post("/webhook", async (req, res) => {
       if (!isBusinessHours()) {
         console.log("\n🔴 === FUERA DE HORARIO ===");
         console.log("⚠️ Mensaje recibido fuera del horario de atención");
+        console.log("🔍 Obteniendo sesión para derivar a cola SAC...");
+
+        // Obtener sesión activa del usuario
+        const sessionData = await getSessionIdByNumber(from);
+
+        if (sessionData) {
+          console.log("✅ Sesión encontrada - Derivando a cola SAC para gestión al día siguiente");
+
+          // Derivar a cola SAC
+          await pickupAndTransfer(sessionData, COLAS["SAC"], "SAC", GENERIC_BOT_MESSAGE, from);
+
+          // Establecer estado FIN para silenciar bot
+          userState[from] = { state: "FIN", lastActivity: Date.now() };
+
+          console.log("✅ Derivación a SAC completada - Estado: FIN");
+        } else {
+          console.log("⚠️ No se encontró sesión activa - Solo se enviará mensaje genérico");
+        }
+
         console.log("📤 Enviando mensaje genérico al usuario");
 
         try {
