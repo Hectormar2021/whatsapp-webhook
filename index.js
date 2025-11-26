@@ -207,7 +207,7 @@ async function getSessionIdByNumber(userNo) {
   const userType = 1;
 
   try {
-    const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${128}&page=1&page_size=20`;
+    const url = `https://vicar.ras.yeastar.com/openapi/v1.0/message_session/list?access_token=${token}&user_type=${userType}&user_no=${401}&page=1&page_size=20`;
     console.log("🌐 URL de consulta:", url.replace(token, "***TOKEN***"));
 
     const res = await fetch(url);
@@ -271,7 +271,7 @@ async function pickupSession(sessionId, messageToSend) {
     const messageBody = {
       session_id: sessionId,
       sender_type: 1,
-      sender_no: "128",
+      sender_no: "401",
       msg_kind: 0,
       msg_type: 0,
       msg_body: messageToSend
@@ -472,7 +472,7 @@ async function getFlowResponse(userId, message, userNo) {
   switch (state) {
     case "START":
       response =
-        "👋 Hola, ¡Bienvenido a VICAR!\nPor favor, elegí la sucursal de tu preferencia:\n1. Asunción\n2. Ciudad del Este";
+        "👋 Hola, ¡Bienvenido a VICAR S.A.!\nPor favor, elegí la sucursal de tu preferencia:\n\n1️⃣ Asunción\n2️⃣ Ciudad del Este";
       userState[userId].state = "SELECCION_SUCURSAL";
       break;
 
